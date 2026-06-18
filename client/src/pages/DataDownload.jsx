@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { downloadSeason, status } from '../api'
 import { getManifest, getCachedManifest } from '../store/dataState'
+import { useRankings } from '../store/RankingsContext.jsx'
 
 export default function DataDownload() {
-  const [year, setYear] = useState(2025)
+  const { year, setYear, forceRefresh } = useRankings();
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)   // will be set from manifest OR fresh download
   const [server, setServer] = useState(null)
@@ -52,13 +53,21 @@ export default function DataDownload() {
       }
 
       // Build rows and compute counts
-      const files = m.files.filter(f => f.endsWith('.json'))
-      const rows = await Promise.all(files.map(async (fn) => {
-        const slug = fn.replace(/\.json$/,'')
-        const url = `/data/${m.year}/${fn}`
-        const count = await fetchCount(url)
-        return { slug, count }
-      }))
+const rawFiles = m.files || [];
+const files = rawFiles
+  .map(f => ({
+    name: typeof f === 'string' ? f : f.name,
+    downloadedAt: typeof f === 'string' ? null : f.downloadedAt || null,
+  }))
+  .filter(f => f.name.endsWith('.json'));
+  
+const rows = await Promise.all(files.map(async (f) => {
+  const slug = f.name.replace(/\.json$/, '');
+  const url = `/data/${m.year}/${f.name}`;
+  const count = await fetchCount(url);
+  return { slug, count, downloadedAt: f.downloadedAt };
+}));
+
 
       rows.sort((a,b) => a.slug.localeCompare(b.slug))
 
@@ -119,6 +128,7 @@ export default function DataDownload() {
       setResult(data)
       // …then re-hydrate from disk but KEEP the errors/summary from the fresh run.
       await hydrateFromManifest(year, data)
+      forceRefresh()
     } catch (e) {
       setErr(String(e.message || e))
     } finally {
@@ -130,8 +140,7 @@ export default function DataDownload() {
     <div className="card">
       <h2>Data Download</h2>
       <p className="small">
-        Downloads season-scoped data from CFBD and saves locally under <code className="inline">server/data/{'{year}'}</code>.
-        Your API key is read from <code className="inline">server/.env</code> on the server — it is never exposed to the browser.
+        Downloads saved locally under <code className="inline">server/data/{'{year}'}</code>.
       </p>
 
       <div className="row" style={{ marginTop: 10 }}>
@@ -140,9 +149,6 @@ export default function DataDownload() {
         <button className="btn" disabled={busy} onClick={onDownload}>
           {busy ? 'Downloading…' : `Download Season Data (${year})`}
         </button>
-        {server && (
-          <span className="badge">Base: {server.baseUrl}</span>
-        )}
         {manifest?.files?.length > 0 && (
           <span className="badge ok" title={`Found ${manifest.files.length} files for ${manifest.year}`}>
             Data found: {manifest.files.length} files
@@ -161,21 +167,49 @@ export default function DataDownload() {
             <span className="badge">Files: {result.summary?.downloaded ?? (result.results?.length || 0)}</span>
             {!!result.summary?.failed && <span className="badge err">Failed: {result.summary.failed}</span>}
           </div>
-          <div className="kv">
-            <div><b>Season</b></div><div>{result.year}</div>
-            <div><b>Saved To</b></div><div><code className="inline">server/data/{result.year}/</code></div>
-          </div>
 
           <h3 style={{ marginTop: 16 }}>Files</h3>
-          <ul>
-            {result.results?.map(r => (
-              <li key={r.slug}>
-                <code className="inline">{r.slug}.json</code>
-                {' '}<span className="small">({typeof r.count === 'number' ? r.count : '—'} records)</span>
-                {' — '}<a href={`/data/${result.year}/${r.slug}.json`} target="_blank" rel="noreferrer">view</a>
-              </li>
-            ))}
-          </ul>
+{result.results?.length > 0 && (
+  <table className="table" style={{ marginTop: 8, width: '100%', borderCollapse: 'collapse' }}>
+    <thead>
+      <tr>
+        <th align="left">Filename</th>
+        <th align="right"># Records</th>
+        <th align="left">Downloaded</th>
+        <th align="left">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {result.results.map(r => (
+        <tr key={r.slug}>
+          <td>
+            <code className="inline">{r.slug}.json</code>
+          </td>
+          <td align="right">
+            {typeof r.count === 'number' ? r.count.toLocaleString() : '—'}
+          </td>
+          <td>
+            <span className="small">
+              {r.downloadedAt
+                ? new Date(r.downloadedAt).toLocaleString()
+                : '—'}
+            </span>
+          </td>
+          <td>
+            <a
+              href={`/data/${result.year}/${r.slug}.json`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              view
+            </a>
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+)}
+
 
           {result.errors?.length > 0 && (
             <div style={{ marginTop: 16 }}>

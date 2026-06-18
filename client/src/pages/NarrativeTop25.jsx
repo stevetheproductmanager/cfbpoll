@@ -1,8 +1,8 @@
 // src/views/NarrativeCardsTop25.jsx
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
-import { buildRankingsForYear } from '../lib/buildRankings.js'
-import { confColor } from '../lib/confColors'
+import { useRankings } from '../store/RankingsContext.jsx'
+import ConfBadge from '../components/ConfBadge.jsx'
 import TeamLogo from '../components/TeamLogo.jsx'
 
 const fmt2 = (n) =>
@@ -326,8 +326,6 @@ function TeamNarrativeCard({ team, maxNarrative, metricRanks, groupSize }) {
     return Math.max(6, Math.min(100, pct))
   })()
 
-  const confBadgeColor = confColor(conference)
-
   const topWins = (narrativeWins || []).slice(0, 3)
   const lossProfile = (narrativeLosses || []).slice(0, 2)
 
@@ -384,18 +382,7 @@ function TeamNarrativeCard({ team, maxNarrative, metricRanks, groupSize }) {
         </div>
 
         <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-          <span
-            className="badge"
-            style={{
-              background: '#0f1533',
-              borderColor: '#2a3975',
-              color: '#fff',
-              borderLeft: `8px solid ${confBadgeColor}`,
-            }}
-            title={conference}
-          >
-            {conference}
-          </span>
+          <ConfBadge conference={conference} size={24} />
           <span className="badge" title="Top 10 / Top 25 / Top 50 Wins">
             T10: {top10Wins || 0} • T25: {top25Wins || 0} • T50: {top50Wins || 0}
           </span>
@@ -836,36 +823,14 @@ function CommonOpponentsCard({ teamA, teamB }) {
 /* ------------------ Main view: top N cards ------------------ */
 
 export default function NarrativeCardsTop25() {
-  const thisYear = new Date().getFullYear()
-  const [year, setYear] = useState(thisYear)
-  const [rows, setRows] = useState(null)
-  const [busy, setBusy] = useState(false)
+  const { rankings, loading: busy, error: ctxErr, year } = useRankings()
   const [err, setErr] = useState(null)
   const [limit, setLimit] = useState(25)
 
-  useEffect(() => {
-    let cancelled = false
-    setBusy(true)
-    setErr(null)
-    setRows(null)
-
-    ;(async () => {
-      try {
-        const ranked = await buildRankingsForYear(Number(year))
-        if (cancelled) return
-        const enriched = buildNarrativeRows(ranked || [])
-        setRows(enriched)
-      } catch (e) {
-        if (!cancelled) setErr(String(e.message || e))
-      } finally {
-        if (!cancelled) setBusy(false)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [year])
+  const rows = useMemo(() => {
+    if (!rankings?.length) return null
+    return buildNarrativeRows(rankings)
+  }, [rankings])
 
   const onChangeLimit = useCallback((e) => {
     const v = Number(e.target.value)
@@ -937,16 +902,7 @@ export default function NarrativeCardsTop25() {
           alignItems: 'center',
         }}
       >
-        <label className="small">
-          Season{' '}
-          <input
-            className="input"
-            type="number"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value) || thisYear)}
-            style={{ width: 90, marginLeft: 6 }}
-          />
-        </label>
+        <span className="small">Season {rankings?.length ? rankings[0]?.games?.[0]?.week ? '' : '' : ''}</span>
         <label className="small">
           Show top{' '}
           <input

@@ -1,117 +1,119 @@
 /* ---------- THEME TOKENS ---------- */
 :root {
   /* Base */
-  --bg: #0b1020;
-  --panel: #121831;
-  --panel-2: #0f1533;            /* kpi boxes, tracks, inputs */
-  --text: #e8ecff;
-  --muted: #9aa3c7;
+  --bg: #06090f;
+  --bg-subtle: #0a0f1a;
+  --panel: rgba(14, 20, 40, 0.85);
+  --panel-solid: #0e1428;
+  --panel-2: #0b1024;
+  --panel-hover: rgba(20, 28, 56, 0.9);
+  --text: #e4e8f7;
+  --text-secondary: #b0b8d4;
+  --muted: #6b7599;
 
-  /* Brand & Status */
-  --brand: #6aa6ff;
-  --brand2: #95d0ff;
-  --ok: #7fdc82;
-  --warn: #f2cc60;
-  --err: #ff7a7a;
+  /* Brand & Accent */
+  --brand: #4d8eff;
+  --brand2: #7db4ff;
+  --brand-glow: rgba(77, 142, 255, 0.15);
+  --brand-glow-strong: rgba(77, 142, 255, 0.25);
+  --accent: #6c5ce7;
+  --accent-glow: rgba(108, 92, 231, 0.2);
 
-  /* Borders */
-  --border: #1b2447;
-  --border-strong: #2a3975;
-
-  /* Badges & Table header */
-  --badge-bg: #0f1a3c;
-  --badge-border: #273a7a;
-  --th-bg: #101735;
-
-  /* Gradients (tabs, buttons, bars) */
-  --tab-grad-start: #152047;
-  --tab-grad-end: #101735;
-  --btn-grad-start: #1d2a59;
-  --btn-grad-end: #13214a;
-
-  /* Charts/semantic */
-  --pos: #7dffa0;
-  --neg: #ff8b8b;
-
-  /* Misc */
-  --img-bg: #0b0f26;
-  --backdrop: rgba(0,0,0,0.35);
-  --elev-shadow: -12px 0 24px rgba(0,0,0,0.25);
-}
-
-/* Light mode equivalents */
-:root[data-theme="light"] {
-  /* Base */
-  --bg: #ffffff;
-  --panel: #f7f8fc;
-  --panel-2: #eef2ff;           /* slightly tinted light panel for inputs/kpis */
-  --text: #101828;
-  --muted: #667085;
-
-  /* Brand & Status */
-  --brand: #3366ff;
-  --brand2: #6690ff;
-  --ok: #0e9f6e;
-  --warn: #b48a1f;
-  --err: #b42318;
+  /* Status */
+  --ok: #34d399;
+  --ok-muted: rgba(52, 211, 153, 0.15);
+  --warn: #fbbf24;
+  --err: #f87171;
+  --err-muted: rgba(248, 113, 113, 0.15);
 
   /* Borders */
-  --border: #e3e6ef;
-  --border-strong: #c7d2fe;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.10);
+  --border-accent: rgba(77, 142, 255, 0.25);
 
   /* Badges & Table header */
-  --badge-bg: #eef1f8;
-  --badge-border: #c7d2fe;
-  --th-bg: #f2f4f7;
+  --badge-bg: rgba(77, 142, 255, 0.08);
+  --badge-border: rgba(77, 142, 255, 0.20);
+  --th-bg: rgba(10, 15, 30, 0.95);
 
   /* Gradients */
-  --tab-grad-start: #e9efff;
-  --tab-grad-end: #e5ebff;
-  --btn-grad-start: #edf2ff;
-  --btn-grad-end: #e6ecff;
+  --tab-grad-start: rgba(77, 142, 255, 0.12);
+  --tab-grad-end: rgba(77, 142, 255, 0.04);
+  --btn-grad-start: rgba(255, 255, 255, 0.06);
+  --btn-grad-end: rgba(255, 255, 255, 0.02);
 
   /* Charts/semantic */
-  --pos: #16a34a;
-  --neg: #dc2626;
+  --pos: #34d399;
+  --neg: #f87171;
 
   /* Misc */
-  --img-bg: transparent;
-  --backdrop: rgba(0,0,0,0.2);
-  --elev-shadow: -12px 0 24px rgba(0,0,0,0.08);
+  --img-bg: #060a14;
+  --backdrop: rgba(0, 0, 0, 0.60);
+  --elev-shadow: -12px 0 48px rgba(0, 0, 0, 0.5);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.15);
+  --glow-shadow: 0 0 30px rgba(77, 142, 255, 0.08);
+
+  /* Header */
+  --header-bg: rgba(10, 15, 30, 0.80);
+  --header-border: rgba(255, 255, 255, 0.06);
 }
 
-/* ---------- GLOBAL HELPERS (minimal) ---------- */
+/* Light mode */
+:root[data-theme="light"] {
+  --bg: #f4f6fb;
+  --bg-subtle: #eef1f8;
+  --panel: rgba(255, 255, 255, 0.90);
+  --panel-solid: #ffffff;
+  --panel-2: #f0f2f9;
+  --panel-hover: rgba(255, 255, 255, 0.95);
+  --text: #0f172a;
+  --text-secondary: #475569;
+  --muted: #94a3b8;
+
+  --brand: #2563eb;
+  --brand2: #3b82f6;
+  --brand-glow: rgba(37, 99, 235, 0.08);
+  --brand-glow-strong: rgba(37, 99, 235, 0.15);
+  --accent: #7c3aed;
+  --accent-glow: rgba(124, 58, 237, 0.1);
+
+  --ok: #059669;
+  --ok-muted: rgba(5, 150, 105, 0.08);
+  --warn: #d97706;
+  --err: #dc2626;
+  --err-muted: rgba(220, 38, 38, 0.08);
+
+  --border: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.10);
+  --border-accent: rgba(37, 99, 235, 0.20);
+
+  --badge-bg: rgba(37, 99, 235, 0.06);
+  --badge-border: rgba(37, 99, 235, 0.15);
+  --th-bg: rgba(244, 246, 251, 0.98);
+
+  --tab-grad-start: rgba(37, 99, 235, 0.08);
+  --tab-grad-end: rgba(37, 99, 235, 0.03);
+  --btn-grad-start: rgba(0, 0, 0, 0.03);
+  --btn-grad-end: rgba(0, 0, 0, 0.01);
+
+  --pos: #059669;
+  --neg: #dc2626;
+
+  --img-bg: transparent;
+  --backdrop: rgba(0, 0, 0, 0.25);
+  --elev-shadow: -12px 0 48px rgba(0, 0, 0, 0.12);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --glow-shadow: 0 0 20px rgba(37, 99, 235, 0.05);
+
+  --header-bg: rgba(255, 255, 255, 0.80);
+  --header-border: rgba(0, 0, 0, 0.06);
+}
+
+/* ---------- GLOBAL BASE ---------- */
 html, body, #root { height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Reusable surface helpers (used in App header & cards) */
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-}
-
-/* Buttons/inputs/badges share theme tokens.
-   (Your detailed layout/spacing still lives in styles.css) */
-.btn {
-  border: 1px solid var(--border-strong);
-  background: linear-gradient(180deg, var(--btn-grad-start), var(--btn-grad-end) 60%);
-  color: var(--text);
-}
-
-.input {
-  background: var(--panel-2);
-  border: 1px solid var(--border-strong);
-  color: var(--text);
-}
-
-.badge {
-  background: var(--badge-bg);
-  border: 1px solid var(--badge-border);
-  color: var(--muted);
 }

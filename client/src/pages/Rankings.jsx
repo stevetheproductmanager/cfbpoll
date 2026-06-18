@@ -1,29 +1,24 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
-import { rankTeams } from '../lib/rankAlgo'
+import { createPortal } from 'react-dom'
+import { useRankings } from '../store/RankingsContext.jsx'
 import { confColor } from '../lib/confColors'
-import { getManifest, getCachedManifest } from '../store/dataState';
+import ConfBadge from '../components/ConfBadge.jsx'
 import { useTheme } from '../theme/ThemeProvider.jsx'
-import  TeamLogo from '../components/TeamLogo.jsx'
-
-async function fetchJSON(path){
-  const res = await fetch(path)
-  if (!res.ok) throw new Error(`Failed ${path} (${res.status})`)
-  return res.json()
-}
+import TeamLogo from '../components/TeamLogo.jsx'
 
 const fmt = (n, d=3) => (typeof n === 'number' ? n : 0).toFixed(d)
 const fmt0 = (n) => (typeof n === 'number' ? Math.round(n) : 0)
 
 function CopyButton({ payload, teamName, logo }) {
-  const [ok, setOk] = React.useState(false);
-  const [showTip, setShowTip] = React.useState(false);
+  const [ok, setOk] = React.useState(false)
+  const [showTip, setShowTip] = React.useState(false)
 
   const handleClick = async (e) => {
-    e?.stopPropagation?.();
-    await navigator.clipboard.writeText(payload);
-    setOk(true);
-    setTimeout(() => setOk(false), 1200);
-  };
+    e?.stopPropagation?.()
+    await navigator.clipboard.writeText(payload)
+    setOk(true)
+    setTimeout(() => setOk(false), 1200)
+  }
 
   return (
     <div
@@ -36,69 +31,34 @@ function CopyButton({ payload, teamName, logo }) {
         onClick={handleClick}
         style={{ position: 'relative', zIndex: 2, display:'inline-flex', alignItems:'center', gap:8, paddingInline:10 }}
       >
-        {/* Team logo on the left */}
         {logo && (
-          <img
-            src={logo}
-            alt=""
-            width={24}
-            height={24}
-            style={{ borderRadius: 2, display:'block' }}
-          />
+          <img src={logo} alt="" width={24} height={24} style={{ borderRadius: 2, display:'block' }} />
         )}
-
-        {/* Copy icon (replaces the "Copy" text). Shows a check when done */}
         {ok ? (
           <span className="checkmark" aria-hidden="true">✓</span>
         ) : (
-          <svg
-            aria-hidden="true"
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ display:'block' }}
-          >
+          <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round" style={{ display:'block' }}>
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
           </svg>
         )}
       </button>
-
       {showTip && (
-        <div
-          style={{
-            position: 'absolute',
-            right: '105%',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            background: '#222',
-            color: '#fff',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            whiteSpace: 'nowrap',
-            fontSize: '0.8rem',
-            pointerEvents: 'none',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-          }}
-        >
+        <div style={{
+          position: 'absolute', right: '105%', top: '50%', transform: 'translateY(-50%)',
+          background: '#222', color: '#fff', padding: '4px 8px', borderRadius: '4px',
+          whiteSpace: 'nowrap', fontSize: '0.8rem', pointerEvents: 'none',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+        }}>
           {teamName || 'Copy'}
         </div>
       )}
     </div>
-  );
+  )
 }
 
-
-
-
-
-/** Mini bars visual without any libs */
 function Bars({ items }) {
   const maxAbs = Math.max( ...items.map(i => Math.abs(i.maxAbs ?? i.value ?? 0)), 1 )
   return (
@@ -128,15 +88,7 @@ function GameTable({ team, rankMap, teamMap }) {
     const oppRank = rankMap.get(g.opp) || '—'
     const loc = g.neutral ? 'N' : (g.home ? 'H' : 'A')
     const win = g.for > g.against
-    return {
-      opp: g.opp,
-      oppConf,
-      oppRank,
-      loc,
-      score: `${g.for}-${g.against}`,
-      wl: win ? 'W' : 'L',
-      week: g.week || 0
-    }
+    return { opp: g.opp, oppConf, oppRank, loc, score: `${g.for}-${g.against}`, wl: win ? 'W' : 'L', week: g.week || 0 }
   }).sort((a,b)=>a.week - b.week)
 
   if (!rows.length) return <div className="small">No games played.</div>
@@ -157,21 +109,16 @@ function GameTable({ team, rankMap, teamMap }) {
         </thead>
         <tbody>
           {rows.map((r, i)=>(
-            <tr key={i} style={{ borderTop:'1px solid #1b2447' }}>
+            <tr key={i} style={{ borderTop:'1px solid var(--border)' }}>
               <td style={{ padding:'6px' }}>{r.week}</td>
               <td style={{ padding:'6px' }}>{r.opp}</td>
               <td style={{ padding:'6px' }}>
-                <span
-                  className="badge"
-                  style={{ background:'#0f1533', borderColor:'#2a3975', color:'#fff', borderLeft:`8px solid ${confColor(r.oppConf)}` }}
-                >
-                  {r.oppConf}
-                </span>
+                <ConfBadge conference={r.oppConf} />
               </td>
               <td style={{ padding:'6px' }}>{r.oppRank}</td>
               <td style={{ padding:'6px' }}>{r.loc}</td>
               <td style={{ padding:'6px' }}>{r.score}</td>
-              <td style={{ padding:'6px', fontWeight:700, color: r.wl === 'W' ? '#1a7935ff' : '#ff0000ff' }}>{r.wl}</td>
+              <td style={{ padding:'6px', fontWeight:700, color: r.wl === 'W' ? 'var(--ok)' : 'var(--err)' }}>{r.wl}</td>
             </tr>
           ))}
         </tbody>
@@ -181,16 +128,19 @@ function GameTable({ team, rankMap, teamMap }) {
 }
 
 function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
-  // Close on ESC + ←/→ nav
   useEffect(() => {
     if (!open) return
+    document.body.style.overflow = 'hidden'
     const onKey = (e) => {
       if (e.key === 'Escape') onClose?.()
       if (e.key === 'ArrowLeft') onPrev?.()
       if (e.key === 'ArrowRight') onNext?.()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = ''
+      window.removeEventListener('keydown', onKey)
+    }
   }, [open, onClose, onPrev, onNext])
 
   if (!open || !team) return null
@@ -202,247 +152,98 @@ function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
 
   const bars = [
     { label: 'Results', value: results, hint: 'Win/Loss + MOV + venue (per-game)' },
-    { label: 'SOS', value: sos, hint: 'Iterative strength + opponents’ win%' },
+    { label: 'SOS', value: sos, hint: 'Iterative strength + opponents\' win%' },
     { label: 'Quality', value: quality, hint: 'Top-10/25/50 wins; bad losses debits (per-game)' },
     { label: 'Recency', value: rec || 0, hint: 'Recent games weigh slightly more' },
   ]
 
-  return (
+  return createPortal(
     <>
-      <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="drawer">
-        <div className="drawer-header">
-          <button className="nav-btn" onClick={onPrev} title="Previous (←)">←</button>
-          <div className="drawer-title">
-            <div className="drawer-rank">#{rank}</div>
-            <div className="drawer-name">{name}</div>
-            <span
-              className="badge"
-              style={{ background:'#0f1533', borderColor:'#2a3975', color:'#fff', borderLeft:`8px solid ${confColor(conference)}` }}
-              title={conference}
-            >
-              {conference}
-            </span>
-          </div>
-          <button className="nav-btn" onClick={onNext} title="Next (→)">→</button>
-        </div>
-
-        <div className="drawer-body">
-          <div className="drawer-kpis">
-            <div className="kpi"><div className="kpi-label">Record</div><div className="kpi-val">{w}-{l}</div></div>
-            <div className="kpi"><div className="kpi-label">Score</div><div className="kpi-val">{fmt(score,3)}</div></div>
-            <div className="kpi"><div className="kpi-label">Top 10 W</div><div className="kpi-val">{top10Wins||0}</div></div>
-            <div className="kpi"><div className="kpi-label">Top 25 W</div><div className="kpi-val">{top25Wins||0}</div></div>
-            <div className="kpi"><div className="kpi-label">Top 50 W</div><div className="kpi-val">{top50Wins||0}</div></div>
-            <div className="kpi"><div className="kpi-label">PF</div><div className="kpi-val">{fmt0(pf)}</div></div>
-            <div className="kpi"><div className="kpi-label">PA</div><div className="kpi-val">{fmt0(pa)}</div></div>
-            <div className="kpi"><div className="kpi-label">Off Rank</div><div className="kpi-val">{offRank || '—'}</div></div>
-            <div className="kpi"><div className="kpi-label">Def Rank</div><div className="kpi-val">{defRank || '—'}</div></div>
-          </div>
-
-          <div className="drawer-section">
-            <h3 style={{ margin: '8px 0 6px' }}>How this score is built</h3>
-            <Bars items={bars} />
-            <div className="small" style={{ marginTop: 6 }}>
-              Weights: Results 42%, SOS 25%, Quality 20%, Consistency 5%, Recency 3% (+ small early-season prior). Undefeated bonus and stronger bad-loss debits applied.
+      <div className="modal-backdrop" onClick={onClose} />
+      <div className="modal-container" onClick={onClose}>
+        <aside className="modal-panel" onClick={e => e.stopPropagation()}>
+          <div className="modal-header">
+            <button className="nav-btn" onClick={onPrev} title="Previous (←)">←</button>
+            <div className="drawer-title">
+              <div className="drawer-rank">#{rank}</div>
+              {team.logo && <img src={team.logo} alt="" style={{ width: 32, height: 32, objectFit: 'contain' }} />}
+              <div className="drawer-name">{name}</div>
+              <ConfBadge conference={conference} size={24} />
+            </div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button className="nav-btn" onClick={onNext} title="Next (→)">→</button>
+              <button className="nav-btn" onClick={onClose} title="Close (Esc)">✕</button>
             </div>
           </div>
 
-          <div className="drawer-section">
-            <h3 style={{ margin: '12px 0 6px' }}>2025 Games</h3>
-            <GameTable team={team} rankMap={rankMap} teamMap={teamMap} />
-          </div>
+          <div className="modal-body">
+            <div className="drawer-kpis">
+              <div className="kpi"><div className="kpi-label">Record</div><div className="kpi-val">{w}-{l}</div></div>
+              <div className="kpi"><div className="kpi-label">Score</div><div className="kpi-val">{fmt(score,3)}</div></div>
+              <div className="kpi"><div className="kpi-label">Top 10 W</div><div className="kpi-val">{top10Wins||0}</div></div>
+              <div className="kpi"><div className="kpi-label">Top 25 W</div><div className="kpi-val">{top25Wins||0}</div></div>
+              <div className="kpi"><div className="kpi-label">Top 50 W</div><div className="kpi-val">{top50Wins||0}</div></div>
+              <div className="kpi"><div className="kpi-label">PF</div><div className="kpi-val">{fmt0(pf)}</div></div>
+              <div className="kpi"><div className="kpi-label">PA</div><div className="kpi-val">{fmt0(pa)}</div></div>
+              <div className="kpi"><div className="kpi-label">Off Rank</div><div className="kpi-val">{offRank || '—'}</div></div>
+              <div className="kpi"><div className="kpi-label">Def Rank</div><div className="kpi-val">{defRank || '—'}</div></div>
+            </div>
 
-          <div className="drawer-section">
-            <div className="row" style={{ gap: 6 }}>
-             <CopyButton
-              payload={`#${rank} ${name} (${conference}) — Score ${fmt(score,3)} | Results ${fmt(results,3)}, SOS ${fmt(sos,3)}, Quality ${fmt(quality,3)}, Recency ${fmt(rec||0,3)} | T10W ${top10Wins||0}, T25W ${top25Wins||0}, T50W ${top50Wins||0}, PF ${fmt0(pf)}, PA ${fmt0(pa)}, OffR ${offRank||'—'}, DefR ${defRank||'—'}`}
-              teamName={`#${rank} ${name}`}
-              logo={team?.logo}
-            />
-              <button className="btn" onClick={onClose}>Close</button>
+            <div className="drawer-section">
+              <h3 style={{ margin: '8px 0 6px' }}>How this score is built</h3>
+              <Bars items={bars} />
+              <div className="small" style={{ marginTop: 6 }}>
+                Weights: EFF 38%, RES 25%, SOS 15%, QLT 12%, MOM 10%. Undefeated bonus (SOS-scaled) and head-to-head nudge applied.
+              </div>
+            </div>
+
+            <div className="drawer-section">
+              <h3 style={{ margin: '12px 0 6px' }}>Games</h3>
+              <GameTable team={team} rankMap={rankMap} teamMap={teamMap} />
+            </div>
+
+            <div className="drawer-section" style={{ paddingBottom: 8 }}>
+              <CopyButton
+                payload={`#${rank} ${name} (${conference}) — Score ${fmt(score,3)} | Results ${fmt(results,3)}, SOS ${fmt(sos,3)}, Quality ${fmt(quality,3)} | T10W ${top10Wins||0}, T25W ${top25Wins||0}, T50W ${top50Wins||0}, PF ${fmt0(pf)}, PA ${fmt0(pa)}, OffR ${offRank||'—'}, DefR ${defRank||'—'}`}
+                teamName={`#${rank} ${name}`}
+                logo={team?.logo}
+              />
             </div>
           </div>
-        </div>
-      </aside>
-    </>
+        </aside>
+      </div>
+    </>,
+    document.body
   )
 }
 
 export default function Rankings(){
-  const { theme } = useTheme(); // NEW
-  const [year, setYear] = useState(2025)
-  const [loading, setLoading] = useState(true)
-  const [err, setErr] = useState(null)
-  const [rows, setRows] = useState([])
-  const [manifest, setManifest] = useState(getCachedManifest())
-  const [note, setNote] = useState(null)
+  const { theme } = useTheme()
+  const { rankings: rows, loading, error, rankMap, teamMap, year } = useRankings()
 
   const [open, setOpen] = useState(false)
-  const [idx, setIdx] = useState(0) // index in rows for the drawer
-
-  const [logoMap, setLogoMap] = useState(() => new Map())
-  const [logoDarkMap, setLogoDarkMap] = useState(() => new Map())
+  const [idx, setIdx] = useState(0)
 
   const current = rows[idx]
-
   const openAt = useCallback((i) => { setIdx(i); setOpen(true) }, [])
   const onPrev = useCallback(() => { setIdx(i => (i <= 0 ? rows.length - 1 : i - 1)) }, [rows.length])
   const onNext = useCallback(() => { setIdx(i => (i >= rows.length - 1 ? 0 : i + 1)) }, [rows.length])
 
-  // Build fast lookup maps for drawer table + extra columns
-  const rankMap = useMemo(() => {
-    const m = new Map()
-    rows.forEach(t => m.set(t.name, t.rank))
-    return m
+  const note = useMemo(() => {
+    if (rows.length && rows.every(t => (t.w || 0) + (t.l || 0) === 0))
+      return 'No games were attached to teams. Check that game team IDs/names align with the teams file.'
+    return null
   }, [rows])
-
-  const teamMap = useMemo(() => {
-    const m = new Map()
-    rows.forEach(t => m.set(t.name, t))
-    return m
-  }, [rows])
-
-  // After ranking, compute extra derived columns (top wins, PF/PA, offense/defense rank)
-  const enrichTeams = useCallback((ranked) => {
-    const rMap = new Map(ranked.map(t => [t.name, t.rank]))
-    // PF/PA totals
-    for (const t of ranked) {
-      let pf = 0, pa = 0, t10=0, t25=0, t50=0
-      const games = t.games || []
-      for (const g of games) {
-        pf += (g.for || 0)
-        pa += (g.against || 0)
-        const oppRank = rMap.get(g.opp) || 999
-        const win = (g.for || 0) > (g.against || 0)
-        if (win) {
-          if (oppRank <= 10) t10++
-          if (oppRank <= 25) t25++
-          if (oppRank <= 50) t50++
-        }
-      }
-      t.pf = pf; t.pa = pa
-      t.top10Wins = t10; t.top25Wins = t25; t.top50Wins = t50
-    }
-    // Offense = PF per game (higher better), Defense = PA per game (lower better)
-    const withUsage = ranked.map(t => {
-      const gp = (t.games || []).length || 1
-      return {
-        name: t.name,
-        off: t.pf / gp,
-        def: t.pa / gp
-      }
-    })
-    // offense rank descending
-    const offOrder = [...withUsage].sort((a,b)=> b.off - a.off)
-    const offPos = new Map(offOrder.map((t,i)=>[t.name, i+1]))
-    // defense rank ascending (lower PA better)
-    const defOrder = [...withUsage].sort((a,b)=> a.def - b.def)
-    const defPos = new Map(defOrder.map((t,i)=>[t.name, i+1]))
-
-    for (const t of ranked) {
-      t.offRank = offPos.get(t.name)
-      t.defRank = defPos.get(t.name)
-    }
-    return ranked
-  }, [])
-
-useEffect(() => {
-  let cancelled = false;
-  async function run() {
-    setLoading(true); setErr(null); setNote(null);
-    try {
-      const m = await getManifest(Number(year));
-      if (cancelled) return;
-      setManifest(m);
-
-      // Prefer ALL teams (FBS+FCS) so FCS games count in W-L/Results/SOS/etc.
-      const teamsPromise = fetch(`/data/${year}/teams.json`)
-        .then(async r => {
-          if (r.ok) return r.json();
-          // fallback to FBS-only if teams.json missing
-          const r2 = await fetch(`/data/${year}/teams-fbs.json`);
-          if (!r2.ok) throw new Error(`Failed /data/${year}/teams.json (${r.status}) and /teams-fbs.json (${r2.status})`);
-          return r2.json();
-        });
-
-      const gamesPromise = fetch(`/data/${year}/games-regular.json`)
-        .then(r => { if (!r.ok) throw new Error(`Failed /data/${year}/games-regular.json (${r.status})`); return r.json(); });
-
-      // Optional early-season prior (OK if missing)
-      const spPromise = fetch(`/data/${year}/sp-ratings.json`)
-        .then(r => r.ok ? r.json() : []);
-
-      const [teams, games, sp] = await Promise.all([teamsPromise, gamesPromise, spPromise]);
-
-      if (cancelled) return;
-
-      // Build logo map from teams data
-      const lm = new Map(); // primary/color logo only
-
-      for (const t of teams || []) {
-        const primary = Array.isArray(t.logos) && t.logos.length ? t.logos[0] : null;
-        if (t.school) lm.set(t.school, primary);
-        if (t.abbreviation) lm.set(t.abbreviation, primary);
-        if (Array.isArray(t.alternateNames)) t.alternateNames.forEach(n => lm.set(n, primary));
-      }
-
-      setLogoMap(lm);
-
-      let ranked = rankTeams({ teamsRaw: teams, gamesRaw: games, spRaw: sp });
-
-      // Tiny UI-side undefeated nudge / early multi-loss soft debit to keep table intuitive.
-      for (const t of ranked) {
-        const gp = (t.games || []).length;
-        if (gp >= 3 && t.l === 0) t.score += 0.01;
-        if (t.l >= 2 && gp <= 5) t.score -= 0.01;
-      }
-      ranked.sort((a, b) => b.score - a.score);
-      ranked.forEach((t, i) => (t.rank = i + 1));
-
-      ranked = enrichTeams(ranked);
-
-      // attach logo url if available
- for (const t of ranked) {
-t.logo = lm.get(t.name) || null;
- }
-
-      if (ranked.every(t => (t.w || 0) + (t.l || 0) === 0)) {
-        setNote('No games were attached to teams. Check that game team IDs/names align with the teams file.');
-      }
-      setRows(ranked);
-      setIdx(0);
-    } catch (e) {
-      setErr(String(e.message || e));
-    } finally {
-      setLoading(false);
-    }
-  }
-  run();
-  return () => { cancelled = true; };
-}, [year, enrichTeams]);
-
-
 
   return (
     <div className="card">
       <h2>Rankings</h2>
-      <div className="row" style={{ marginTop: 8 }}>
-        <label>Season</label>
-        <input className="input" type="number" value={year} onChange={e=>setYear(e.target.value)} />
-        <span className="small">Computed locally from downloaded JSON.</span>
-        {manifest?.files?.length > 0 && (
-          <span className="badge" title={`Found ${manifest.files.length} files for ${manifest.year}`}>
-            Files: {manifest.files.length}
-          </span>
-        )}
-      </div>
 
-      {err && <div className="progress"><span className="badge err">Error</span> {err}</div>}
+      {error && <div className="progress"><span className="badge err">Error</span> {error}</div>}
       {note && <div className="progress"><span className="badge warn">Note</span> {note}</div>}
       {loading && <div className="progress">Building rankings…</div>}
 
-      {!loading && !err && (
+      {!loading && !error && (
         <div style={{ overflowX: 'auto', marginTop: 12 }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead>
@@ -477,45 +278,24 @@ t.logo = lm.get(t.name) || null;
                 return (
                   <tr
                     key={t.name}
-                    style={{ borderTop:'1px solid #1b2447', cursor:'pointer' }}
+                    style={{ borderTop:'1px solid var(--border)', cursor:'pointer' }}
                     onClick={() => openAt(i)}
                   >
                     <td style={{ padding:'8px' }}>{t.rank}</td>
                     <td style={{ padding:'8px' }}>
                       <div style={{ display:'flex', alignItems:'center', gap:8, whiteSpace:'nowrap' }}>
-                        <div
-                          style={{
-                            width: 24,
-                            height: 24,
-                            flex: '0 0 24px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
+                        <div style={{ width: 24, height: 24, flex: '0 0 24px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                           {t.logo ? (
-                            <img
-                              src={t.logo}
-                              alt={`${t.name} logo`}
-                              style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }}
-                            />
+                            <img src={t.logo} alt={`${t.name} logo`} style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }} />
                           ) : (
-                            // keeps name aligned even when no logo
                             <div style={{ width:24, height:24 }} />
                           )}
                         </div>
                         <span>{t.name}</span>
                       </div>
                     </td>
-
                     <td style={{ padding:'8px' }}>
-                      <span
-                        className="badge"
-                        style={{ background:'#0f1533', borderColor:'#2a3975', color:'#fff', borderLeft:`8px solid ${confColor(t.conference)}` }}
-                        title={t.conference}
-                      >
-                        {t.conference}
-                      </span>
+                      <ConfBadge conference={t.conference} />
                     </td>
                     <td style={{ padding:'8px' }}>{t.w}-{t.l}</td>
                     <td style={{ padding:'8px' }}>{fmt(t.results)}</td>
@@ -532,12 +312,8 @@ t.logo = lm.get(t.name) || null;
                     <td style={{ padding:'8px' }}>{t.defRank || '—'}</td>
                     <td style={{ padding:'8px', fontWeight:700 }}>{fmt(t.score,3)}</td>
                     <td style={{ padding:'8px' }}>
-                    <CopyButton
-                      payload={payload}
-                      teamName={`#${t.rank} ${t.name}`}
-                      logo={t.logo}
-                    />                   
-                     </td>
+                      <CopyButton payload={payload} teamName={`#${t.rank} ${t.name}`} logo={t.logo} />
+                    </td>
                   </tr>
                 )
               })}
