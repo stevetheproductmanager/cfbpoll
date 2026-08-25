@@ -352,7 +352,7 @@ app.get('/api/download/status/:year', requireAdmin, (req, res) => {
 // never hammer CFBD's API. Runs detached from any single HTTP request (same
 // reason as /api/download above) and survives just fine across polls since
 // state lives in this module-level object.
-const backfill = { running: false, queue: [], currentYear: null, done: [], skipped: [], failed: [], startedAt: null, delayMs: 12000, log: [] };
+const backfill = { running: false, queue: [], currentYear: null, done: [], skipped: [], failed: [], startedAt: null, delayMs: 12000, log: [], errorsByYear: {} };
 function backfillLog(msg) {
   backfill.log.push({ time: new Date().toISOString(), message: msg });
   if (backfill.log.length > 100) backfill.log.shift();
@@ -370,8 +370,19 @@ async function runBackfillLoop() {
       } else {
         backfillLog(`${year}: downloading...`);
         const { results, errors } = await downloadSeasonEndpoints(year);
-        if (errors.length) backfillLog(`${year}: done with ${errors.length} endpoint error(s) (${results.length} ok)`);
-        else backfillLog(`${year}: done (${results.length} endpoints)`);
+        if (errors.length) {
+          backfill.errorsByYear[year] = errors;
+          backfillLog(`${year}: done with ${errors.length} endpoint error(s) (${results.length} ok)`);
+          // One line per failed endpoint — status code (or exception message)
+          // plus a trimmed snippet of what CFBD actually returned, so a bad
+          // endpoint doesn't just show up as an opaque count.
+          for (const e of errors) {
+            const detail = e.status ? `HTTP ${e.status}` : 'exception';
+            backfillLog(`${year}: ✗ ${e.slug} — ${detail} — ${String(e.message || '').slice(0, 160)}`);
+          }
+        } else {
+          backfillLog(`${year}: done (${results.length} endpoints)`);
+        }
         backfill.done.push(year);
       }
     } catch (e) {
@@ -419,6 +430,7 @@ app.get('/api/admin/backfill/status', requireAdmin, (req, res) => {
     running: backfill.running, currentYear: backfill.currentYear, queueLength: backfill.queue.length,
     done: backfill.done, skipped: backfill.skipped, failed: backfill.failed,
     startedAt: backfill.startedAt, delayMs: backfill.delayMs, log: backfill.log.slice(-40),
+    errorsByYear: backfill.errorsByYear,
   });
 });
 

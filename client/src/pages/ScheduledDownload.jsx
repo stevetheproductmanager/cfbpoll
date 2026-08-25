@@ -95,6 +95,27 @@ function BackfillPanel() {
         </div>
       )}
 
+      {status?.errorsByYear && Object.keys(status.errorsByYear).length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Endpoint errors by season</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {Object.entries(status.errorsByYear).sort((a, b) => b[0] - a[0]).map(([yr, errs]) => (
+              <details key={yr} style={{ background: 'var(--err-muted, rgba(248,113,113,0.08))', border: '1px solid var(--err)', borderRadius: 8, padding: '6px 10px' }}>
+                <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--err)' }}>{yr} — {errs.length} endpoint{errs.length !== 1 ? 's' : ''} failed</summary>
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {errs.map((e, i) => (
+                    <div key={i} style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                      <code className="inline">{e.slug}</code>{e.status ? ` — HTTP ${e.status}` : ''} — {e.message}
+                      {e.pathTried && <span style={{ color: 'var(--muted)' }}> ({e.pathTried})</span>}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
+
       {status?.log?.length > 0 && (
         <div style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', maxHeight: 180, overflowY: 'auto', fontSize: 12 }}>
           {status.log.slice().reverse().map((entry, i) => (
@@ -102,7 +123,7 @@ function BackfillPanel() {
               <span style={{ color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', fontSize: 11 }}>
                 {new Date(entry.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
-              <span style={{ color: /fail|error/i.test(entry.message) ? 'var(--err)' : 'var(--text-secondary)' }}>{entry.message}</span>
+              <span style={{ color: /fail|error|✗/i.test(entry.message) ? 'var(--err)' : 'var(--text-secondary)' }}>{entry.message}</span>
             </div>
           ))}
         </div>
