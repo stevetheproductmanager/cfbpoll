@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
+import { useFavorites } from '../../store/FavoritesContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 
 const FEATURES = [
@@ -9,6 +10,76 @@ const FEATURES = [
   { icon: '🏆', title: 'Voter Leaderboard', desc: 'See who nails the consensus and who goes bold. Your accuracy is tracked all season.', to: '/leaderboard' },
   { icon: '📈', title: 'Visual Poll', desc: 'Explore the rankings as tiers, cards, or bubbles. Track movement week over week.', to: '/visual' },
 ]
+
+function LiveCountdown({ deadline }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id) }, [])
+  if (!deadline) return null
+  const diff = new Date(deadline).getTime() - now
+  if (diff <= 0) return null
+  const days = Math.floor(diff / 86400000)
+  const hrs = Math.floor((diff % 86400000) / 3600000)
+  const mins = Math.floor((diff % 3600000) / 60000)
+  const secs = Math.floor((diff % 60000) / 1000)
+  const urgent = diff < 86400000
+  return (
+    <span style={{ fontSize: 13, fontWeight: 700, color: urgent ? 'var(--err)' : 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+      {days > 0 ? `${days}d ` : ''}{String(hrs).padStart(2, '0')}:{String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+    </span>
+  )
+}
+
+function YourTeamsPanel() {
+  const { user } = useAuth()
+  const { favorites } = useFavorites()
+  const [consensus, setConsensus] = useState(null)
+
+  useEffect(() => {
+    if (!favorites.length) return
+    fetch('/api/weeks').then(r => r.json()).then(w => {
+      const week = w.current?.week
+      if (!week) return
+      fetch(`/api/ballots/consensus?week=${week}`).then(r => r.json()).then(setConsensus).catch(() => {})
+    }).catch(() => {})
+  }, [favorites.length])
+
+  const rankMap = useMemo(() => {
+    const m = new Map()
+    ;(consensus?.rankings || []).forEach(t => m.set(t.team, t))
+    return m
+  }, [consensus])
+
+  if (!user || !favorites.length) return null
+
+  return (
+    <div style={{ maxWidth: 800, margin: '0 auto 32px', padding: '0 24px' }}>
+      <div className="card" style={{ marginTop: 0 }}>
+        <h3 style={{ marginBottom: 10, fontSize: 15 }}>★ Your Teams</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {favorites.map(team => {
+            const t = rankMap.get(team)
+            return (
+              <div key={team} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+                <TeamLogo name={team} size={22} />
+                <span style={{ fontWeight: 600, flex: 1 }}>{team}</span>
+                {t ? (
+                  <>
+                    <span style={{ fontWeight: 700, color: 'var(--brand2)' }}>#{t.rank}</span>
+                    {t.movement !== null && t.movement !== 0 && (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: t.movement > 0 ? 'var(--ok)' : 'var(--err)' }}>
+                        {t.movement > 0 ? '▲' : '▼'}{Math.abs(t.movement)}
+                      </span>
+                    )}
+                  </>
+                ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>Unranked</span>}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function DashboardCard({ dashboard }) {
   if (!dashboard) return null
@@ -33,9 +104,12 @@ function DashboardCard({ dashboard }) {
             </span>
           </div>
           {dashboard.deadline && dashboard.isOpen && (
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-              Due {new Date(dashboard.deadline).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                Due {new Date(dashboard.deadline).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </span>
+              <LiveCountdown deadline={dashboard.deadline} />
+            </div>
           )}
         </div>
 
@@ -123,6 +197,7 @@ export default function Landing() {
 
       {/* Live dashboard */}
       <DashboardCard dashboard={dashboard} />
+      <YourTeamsPanel />
 
       {/* Features */}
       <div style={{

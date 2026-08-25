@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import TeamDetailModal from '../../components/TeamDetailModal.jsx'
+import FavoriteStar from '../../components/FavoriteStar.jsx'
+import ShareButton from '../../components/ShareButton.jsx'
 
 const BALLOT_KEY = 'pollposition_ballot'
 
@@ -158,7 +160,10 @@ function ConsensusTab({ top25, receiving, data, maxVariance, myBallot, onTeam })
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <TeamLogo name={t.team} />
                         <div>
-                          <button onClick={() => onTeam?.(t.team)} style={{ all: 'unset', cursor: 'pointer', fontWeight: 600, fontSize: 14 }} title="View team details">{t.team}</button>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <button onClick={() => onTeam?.(t.team)} style={{ all: 'unset', cursor: 'pointer', fontWeight: 600, fontSize: 14 }} title="View team details">{t.team}</button>
+                            <FavoriteStar team={t.team} />
+                          </span>
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t.appearances}/{data.totalVoters} ballots</div>
                         </div>
                       </div>
@@ -726,12 +731,15 @@ export default function PublicRankings() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 12, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12, overflowX: 'auto', alignItems: 'center' }}>
         {TABS.map(t => (
           <div key={t.key} className={`tab${view === t.key ? ' active' : ''}`} onClick={() => setView(t.key)}>
             {t.label}
           </div>
         ))}
+        <div style={{ marginLeft: 'auto' }}>
+          <ShareButton title={`Week ${selectedWeek} Consensus Top 25`} text={top25[0] ? `#1 ${top25[0].team} — Week ${selectedWeek} community rankings on Poll Position` : ''} />
+        </div>
       </div>
 
       {loading ? (

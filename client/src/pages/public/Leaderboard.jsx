@@ -9,6 +9,30 @@ function MedalIcon({ rank }) {
   return <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--muted)', minWidth: 28, textAlign: 'center' }}>#{rank}</span>
 }
 
+// Consecutive weeks voted, counting backward from the most recent week that
+// had any ballots at all (not necessarily this voter's most recent pick —
+// missing the latest week breaks the streak, same as a real streak counter).
+function computeStreak(weekDetail, allWeeks) {
+  if (!weekDetail?.length || !allWeeks?.length) return 0
+  const voted = new Set(weekDetail.map(w => w.week))
+  const weekNums = allWeeks.map(w => w.week).sort((a, b) => b - a)
+  let streak = 0
+  for (const wk of weekNums) {
+    if (voted.has(wk)) streak++
+    else break
+  }
+  return streak
+}
+
+function StreakBadge({ streak }) {
+  if (streak < 3) return null
+  return (
+    <span title={`${streak}-week voting streak`} style={{ fontSize: 11, fontWeight: 700, color: 'var(--warn)', marginLeft: 6 }}>
+      🔥{streak}
+    </span>
+  )
+}
+
 function StatBar({ value, max, color = 'var(--brand)' }) {
   const pct = max ? (value / max) * 100 : 0
   return (
@@ -142,6 +166,7 @@ export default function Leaderboard() {
                         <div>
                           <span style={{ fontWeight: 600, fontSize: 14 }}>{v.userName}</span>
                           {isMe && <span className="badge" style={{ marginLeft: 6, fontSize: 9, padding: '1px 6px' }}>YOU</span>}
+                          <StreakBadge streak={computeStreak(v.weekDetail, data.weeks)} />
                         </div>
                       </div>
                     </td>

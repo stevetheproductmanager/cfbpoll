@@ -4,6 +4,8 @@ import { useToast } from '../../store/ToastContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import { Navigate } from 'react-router-dom'
 import TeamDetailModal from '../../components/TeamDetailModal.jsx'
+import FavoriteStar from '../../components/FavoriteStar.jsx'
+import ShareButton from '../../components/ShareButton.jsx'
 
 const BALLOT_KEY = 'pollposition_ballot'
 const MAX_PICKS = 25
@@ -109,6 +111,7 @@ function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDraggi
             style={{ background: 'none', border: 'none', color: 'inherit', font: 'inherit', fontWeight: 600, fontSize: 14, cursor: 'pointer', padding: 0, textAlign: 'left' }}
             title="View team details"
           >{name}</button>
+          <FavoriteStar team={name} />
           {diff !== null && diff !== undefined && diff !== 0 && diff !== 'NEW' && (
             <span style={{ fontSize: 11, fontWeight: 700, color: diff > 0 ? 'var(--ok)' : 'var(--err)' }}>
               {diff > 0 ? '▲' : '▼'}{Math.abs(diff)}
@@ -187,6 +190,28 @@ function SanityCheck({ conflicts, onTeam }) {
         ))}
         {conflicts.length > 8 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>+{conflicts.length - 8} more</div>}
       </div>
+    </div>
+  )
+}
+
+const ONBOARDING_KEY = 'pollposition_ballot_tip_seen'
+
+function OnboardingTip() {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(ONBOARDING_KEY) === '1' } catch { return false }
+  })
+  if (dismissed) return null
+  const dismiss = () => { try { localStorage.setItem(ONBOARDING_KEY, '1') } catch {}; setDismissed(true) }
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, background: 'var(--brand-glow)',
+      border: '1px solid var(--border-accent)', borderRadius: 10, padding: '10px 16px', marginBottom: 16,
+    }}>
+      <span style={{ fontSize: 20, flexShrink: 0 }}>👋</span>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', flex: 1 }}>
+        <strong>New here?</strong> Use <em>Smart Start</em> to load a preset ranking, then drag the ⠿ handle to reorder — or click a team's name for its full resume.
+      </p>
+      <button onClick={dismiss} className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', flexShrink: 0 }}>Got it</button>
     </div>
   )
 }
@@ -389,8 +414,13 @@ export default function MyBallot() {
           <button className="btn btn-ghost" onClick={() => setConfirmAction('recall')} style={{ fontSize: 12, padding: '4px 12px', border: '1px solid var(--border-strong)' }}>
             Recall Ballot
           </button>
+          <ShareButton
+            title="My Top 25 Ballot" text={`My Week ${weekInfo?.current?.week} Top 25 on Poll Position — #1 ${ballot[0] || ''}`}
+            url={`${window.location.origin}/history/${user.id}`}
+          />
         </div>
       )}
+      <OnboardingTip />
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
         <h1 style={{
           fontSize: 32, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4,
@@ -542,6 +572,7 @@ export default function MyBallot() {
                     <TeamLogo name={t} size={18} />
                     <span style={{ fontWeight: 500, flex: 1 }}>{t}</span>
                     {r && <span style={{ fontSize: 10, color: 'var(--muted)' }}>{r.record}{r.rank ? ` · #${r.rank}` : ''}</span>}
+                    <FavoriteStar team={t} />
                   </div>
                 )
               })}

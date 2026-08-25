@@ -29,11 +29,11 @@ export default function AdminSettings() {
   if (!form) return <div className="card"><p className="small">Loading...</p></div>
 
   return (
-    <div className="card" style={{ maxWidth: 520 }}>
+    <div className="card">
       <h2 style={{ marginBottom: 4 }}>Site Settings</h2>
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>Site-wide voting rules and the public announcement banner.</p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 520 }}>
         <div>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Max Teams Per Ballot</label>
           <input type="number" className="input" min={1} max={25} value={form.maxBallotSize}

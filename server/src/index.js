@@ -614,6 +614,24 @@ app.delete('/api/ballots/recall', ballotWriteLimiter, requireAuth, async (req, r
   res.json({ ok: true });
 });
 
+// ---- Favorite teams ----
+app.get('/api/me/favorites', requireAuth, async (req, res) => {
+  const account = await User.findById(req.user.id).lean();
+  res.json({ favorites: account?.favoriteTeams || [] });
+});
+
+app.post('/api/me/favorites/toggle', requireAuth, async (req, res) => {
+  const { team } = req.body || {};
+  if (!team) return res.status(400).json({ error: 'Missing team' });
+  const account = await User.findById(req.user.id);
+  if (!account) return res.status(404).json({ error: 'User not found' });
+  const set = new Set(account.favoriteTeams || []);
+  if (set.has(team)) set.delete(team); else set.add(team);
+  account.favoriteTeams = [...set];
+  await account.save();
+  res.json({ ok: true, favorites: account.favoriteTeams });
+});
+
 // GET /api/ballots/consensus
 app.get('/api/ballots/consensus', async (req, res) => {
   const season = Number(req.query.season || 2025);

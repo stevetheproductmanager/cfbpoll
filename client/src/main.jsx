@@ -14,3 +14,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </ThemeProvider>
   </React.StrictMode>
 );
+
+// Register the PWA service worker (offline app-shell + installability).
+// No-op in dev where /sw.js isn't served by Vite the same way; harmless if
+// registration fails.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
