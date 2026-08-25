@@ -259,7 +259,7 @@ export default function makeTeamsRouter({ baseURL, apiKey }) {
       }
 
       // Save alongside your other data
-      const savedTo = writeJson(Number(year), `matchup-${team1.replace(/\s+/g,'_')}-vs-${team2.replace(/\s+/g,'_')}`, norm)
+      const savedTo = await writeJson(Number(year), `matchup-${team1.replace(/\s+/g,'_')}-vs-${team2.replace(/\s+/g,'_')}`, norm)
       const count = norm.games.length
 
       res.json({ ok:true, year:Number(year), pathTried: chosen.path, savedTo, count, data: norm })

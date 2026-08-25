@@ -36,13 +36,16 @@ body {
   border-bottom: 1px solid var(--header-border);
   padding: 0 24px;
   margin-bottom: 4px;
+  display: flex;
 }
 
 .topbar-inner {
+  width: 100%;
   max-width: 1440px;
   margin: 0 auto;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   height: 56px;
   gap: 16px;
 }
@@ -71,6 +74,12 @@ body {
   align-items: center;
   gap: 8px;
 }
+
+/* ---- Public header (responsive) ---- */
+.pp-desktop-nav { display: flex; }
+.pp-desktop-actions { display: flex; }
+.pp-mobile-toggle { display: none; }
+.pp-mobile-menu { display: none; }
 
 /* ---- Navigation ---- */
 .nav-strip {
@@ -314,6 +323,10 @@ table tbody tr:hover {
   from { transform: translateY(16px) scale(0.98); opacity: 0; }
   to   { transform: translateY(0) scale(1);       opacity: 1; }
 }
+@keyframes toastIn {
+  from { transform: translateX(100%) scale(0.95); opacity: 0; }
+  to   { transform: translateX(0) scale(1);       opacity: 1; }
+}
 .modal-header {
   display: flex;
   align-items: center;
@@ -425,4 +438,53 @@ table tbody tr:hover {
   .brand { font-size: 15px; }
   .drawer-kpis { grid-template-columns: repeat(2, 1fr); }
   .nav-group-label { display: none; }
+  .ballot-grid { grid-template-columns: 1fr !important; }
+
+  /* Public header collapses to a hamburger menu */
+  .pp-desktop-nav, .pp-desktop-actions { display: none !important; }
+  .pp-mobile-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .pp-mobile-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: absolute;
+    top: 48px;
+    left: 0;
+    right: 0;
+    background: var(--panel-solid);
+    border-bottom: 1px solid var(--header-border);
+    padding: 12px;
+    z-index: 30;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+  }
+  .pp-mobile-menu .tab {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 15px;
+    border-radius: 10px;
+  }
+  .pp-mobile-menu-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
 }

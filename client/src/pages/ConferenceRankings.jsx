@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useRankings } from '../store/RankingsContext.jsx'
-import { confColor } from '../lib/confColors'
+import { confColor } from '../lib/conferenceUtils.js'
 import ConfBadge from '../components/ConfBadge.jsx'
 
 const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }

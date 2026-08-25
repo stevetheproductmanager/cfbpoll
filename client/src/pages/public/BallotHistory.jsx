@@ -1,0 +1,216 @@
+import React, { useEffect, useState, useMemo } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { useAuth } from '../../store/AuthContext.jsx'
+import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
+
+function MovementBadge({ movement }) {
+  if (!movement) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+  const up = movement > 0
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 700,
+      color: up ? 'var(--ok)' : 'var(--err)',
+      display: 'inline-flex', alignItems: 'center', gap: 2,
+    }}>
+      {up ? '▲' : '▼'}{Math.abs(movement)}
+    </span>
+  )
+}
+
+export default function BallotHistory() {
+  const { userId } = useParams()
+  const { user } = useAuth()
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [selectedWeek, setSelectedWeek] = useState(null)
+
+  const targetId = userId || user?.id
+  const isMe = user?.id === targetId
+
+  useEffect(() => {
+    if (!targetId) { setLoading(false); return }
+    fetch(`/api/ballots/history/${targetId}`).then(r => r.json()).then(d => {
+      setData(d)
+      if (d.weeks?.length) setSelectedWeek(d.weeks[d.weeks.length - 1].week)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [targetId])
+
+  const weekData = useMemo(() => data?.weeks?.find(w => w.week === selectedWeek), [data, selectedWeek])
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 80, color: 'var(--muted)' }}>Loading history...</div>
+
+  if (!targetId) {
+    return (
+      <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px 24px 80px', textAlign: 'center' }}>
+        <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8 }}>Ballot History</h1>
+        <div className="card" style={{ padding: '40px 24px' }}>
+          <p style={{ color: 'var(--text-secondary)' }}>Sign in to see your ballot history.</p>
+          <Link to="/login" className="btn btn-primary" style={{ marginTop: 12, display: 'inline-block' }}>Sign In</Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (!data?.weeks?.length) {
+    return (
+      <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px 24px 80px', textAlign: 'center' }}>
+        <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8 }}>
+          {isMe ? 'Your' : `${data?.userName || 'Voter'}'s`} Ballot History
+        </h1>
+        <div className="card" style={{ padding: '40px 24px' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
+          <p style={{ color: 'var(--text-secondary)' }}>No ballots submitted yet.</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 24px 80px' }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <h1 style={{
+          fontSize: 32, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4,
+          background: 'linear-gradient(135deg, var(--brand), var(--accent))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+        }}>{isMe ? 'Your' : `${data.userName}'s`} Ballot History</h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+          {data.weeks.length} week{data.weeks.length !== 1 ? 's' : ''} of picks
+        </p>
+      </div>
+
+      {/* Back to leaderboard */}
+      <div style={{ marginBottom: 12 }}>
+        <Link to="/leaderboard" style={{ fontSize: 13, color: 'var(--brand2)' }}>← Back to Leaderboard</Link>
+      </div>
+
+      {/* KPI tiles */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 16 }}>
+        <div className="kpi"><div className="kpi-label">Weeks Voted</div><div className="kpi-value">{data.weeks.length}</div></div>
+        <div className="kpi"><div className="kpi-label">Unique Teams</div><div className="kpi-value">{new Set(data.weeks.flatMap(w => w.picks)).size}</div></div>
+        <div className="kpi"><div className="kpi-label">Most Consistent</div><div className="kpi-value" style={{ fontSize: 14 }}>{getMostConsistent(data.weeks)}</div></div>
+        <div className="kpi"><div className="kpi-label">Biggest Mover</div><div className="kpi-value" style={{ fontSize: 14 }}>{getBiggestMover(data.weeks)}</div></div>
+      </div>
+
+      {/* Week tabs */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+        {data.weeks.map(w => (
+          <button key={w.week} className={`tab${selectedWeek === w.week ? ' active' : ''}`}
+            onClick={() => setSelectedWeek(w.week)}>
+            Week {w.week}
+          </button>
+        ))}
+      </div>
+
+      {/* Week detail */}
+      {weekData && (
+        <div className="card" style={{ marginTop: 0, padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0 }}>Week {weekData.week} Ballot</h3>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{weekData.picks.length} teams</span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={{ width: 50, textAlign: 'center' }}>Rank</th>
+              <th style={{ textAlign: 'left' }}>Team</th>
+              <th style={{ textAlign: 'center', width: 90 }}>vs Prev Week</th>
+              <th style={{ textAlign: 'center', width: 90 }}>vs Consensus</th>
+            </tr></thead>
+            <tbody>
+              {weekData.picks.map((team, i) => {
+                const prevWeek = data.weeks.find(w => w.week === weekData.week - 1)
+                const prevRank = prevWeek ? prevWeek.picks.indexOf(team) + 1 : 0
+                const movement = prevRank > 0 ? prevRank - (i + 1) : null
+                const wasNew = prevWeek && prevRank === 0
+                return (
+                  <tr key={team} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ textAlign: 'center', fontWeight: 800, fontSize: 14, color: 'var(--brand2)' }}>{i + 1}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <TeamLogo name={team} size={24} />
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{team}</span>
+                        {wasNew && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-muted)', padding: '1px 5px', borderRadius: 4 }}>NEW</span>}
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {movement !== null ? <MovementBadge movement={movement} /> : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}
+                    </td>
+                    <td style={{ textAlign: 'center', fontSize: 12, color: 'var(--muted)' }}>—</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+
+          {/* Dropped teams */}
+          {weekData.week > 1 && (() => {
+            const prev = data.weeks.find(w => w.week === weekData.week - 1)
+            if (!prev) return null
+            const dropped = prev.picks.filter(t => !weekData.picks.includes(t))
+            if (!dropped.length) return null
+            return (
+              <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--panel-2)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--err)', marginBottom: 6 }}>Dropped from ballot:</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {dropped.map(t => (
+                    <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'var(--err-muted)', borderRadius: 6, fontSize: 12 }}>
+                      <TeamLogo name={t} size={16} />
+                      <span style={{ color: 'var(--err)' }}>{t}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* Week-over-week timeline */}
+      {data.weeks.length > 1 && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <h3 style={{ marginBottom: 12 }}>Pick Consistency</h3>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+            Teams that appeared on every ballot
+          </div>
+          {(() => {
+            const allWeeks = data.weeks.map(w => new Set(w.picks))
+            const consistent = data.weeks[0].picks.filter(t => allWeeks.every(s => s.has(t)))
+            if (!consistent.length) return <div style={{ color: 'var(--muted)', fontSize: 13 }}>No team appeared on every ballot.</div>
+            return (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {consistent.map(t => (
+                  <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'var(--ok-muted)', borderRadius: 8, border: '1px solid var(--ok)' }}>
+                    <TeamLogo name={t} size={20} />
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{t}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function getMostConsistent(weeks) {
+  if (weeks.length < 2) return '—'
+  const allWeeks = weeks.map(w => new Set(w.picks))
+  const consistent = weeks[0].picks.filter(t => allWeeks.every(s => s.has(t)))
+  return consistent[0] || '—'
+}
+
+function getBiggestMover(weeks) {
+  if (weeks.length < 2) return '—'
+  const last = weeks[weeks.length - 1]
+  const prev = weeks[weeks.length - 2]
+  let biggest = null, biggestDiff = 0
+  for (const team of last.picks) {
+    const curRank = last.picks.indexOf(team) + 1
+    const prevRank = prev.picks.indexOf(team) + 1
+    if (prevRank === 0) continue
+    const diff = Math.abs(curRank - prevRank)
+    if (diff > biggestDiff) { biggestDiff = diff; biggest = team }
+  }
+  return biggest || '—'
+}

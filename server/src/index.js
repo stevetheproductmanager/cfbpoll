@@ -1,21 +1,103 @@
 
-import 'dotenv/config';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import dotenv from 'dotenv';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { makeCfbdClient } from './cfbdClient.js';
 import { ENDPOINTS } from './endpoints.js';
-import { writeJson } from './save.js';
+import { writeJson, readJson } from './save.js';
 import { log } from './utils/logger.js';
-import fs from 'fs';
+import { connectDB } from './db.js';
 import makeTeamsRouter from './routes/teams.js';
+import makeAuthRouter from './routes/auth.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Models
+import Team from './models/Team.js';
+import Week from './models/Week.js';
+import Ballot from './models/Ballot.js';
+import CfbdData from './models/CfbdData.js';
+import User from './models/User.js';
+import cron from 'node-cron';
+import { sendEmail, getEmailLog, deadlineReminderEmail, weeklyRecapEmail } from './email.js';
+
+const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 
 const app = express();
+
+// ---- Scheduled Data Download ----
+let scheduledTask = null;
+const scheduleLog = [];
+function addScheduleLog(msg) {
+  const entry = { time: new Date().toISOString(), message: msg };
+  scheduleLog.push(entry);
+  if (scheduleLog.length > 50) scheduleLog.shift();
+  log(`[scheduler] ${msg}`);
+}
+
+async function runScheduledDownload(year = 2025) {
+  addScheduleLog(`Starting scheduled CFBD data download for ${year}...`);
+  try {
+    const results = [];
+    const errors = [];
+    for (const ep of ENDPOINTS) {
+      const candidates = ep.candidates || [ep.path];
+      try {
+        const out = await tryCandidates(year, candidates);
+        if (out.ok) {
+          await writeJson(year, ep.slug, out.data);
+          const count = Array.isArray(out.data) ? out.data.length : (out.data ? 1 : 0);
+          results.push({ slug: ep.slug, count });
+          if (ep.slug === 'teams' && Array.isArray(out.data)) {
+            const ops = out.data.filter(t => t.school).map(t => ({
+              updateOne: {
+                filter: { school: t.school, season: year },
+                update: { school: t.school, conference: t.conference, mascot: t.mascot, abbreviation: t.abbreviation, logos: t.logos || [], color: t.color, altColor: t.alt_color || t.altColor, season: year },
+                upsert: true,
+              },
+            }));
+            if (ops.length) await Team.bulkWrite(ops);
+          }
+        } else {
+          errors.push({ slug: ep.slug, status: out.status });
+        }
+      } catch (inner) {
+        errors.push({ slug: ep.slug, message: String(inner?.message || inner) });
+      }
+      await new Promise(r => setTimeout(r, 150));
+    }
+    weeklyCache.delete(String(year));
+    try { weeklyCache.set(String(year), await computeWeeklyRankings(String(year))); } catch {}
+    addScheduleLog(`Download complete: ${results.length} OK, ${errors.length} errors`);
+  } catch (e) {
+    addScheduleLog(`Download failed: ${e.message}`);
+  }
+}
+
+async function loadSchedule() {
+  const doc = await CfbdData.findOne({ season: 0, slug: 'schedule_config' }).lean();
+  return doc?.data || null;
+}
+
+async function saveSchedule(config) {
+  await CfbdData.findOneAndUpdate(
+    { season: 0, slug: 'schedule_config' },
+    { data: config, downloadedAt: new Date() },
+    { upsert: true }
+  );
+}
+
+function applySchedule(config) {
+  if (scheduledTask) { scheduledTask.stop(); scheduledTask = null; }
+  if (!config?.enabled || !config?.cronExpr) return;
+  if (!cron.validate(config.cronExpr)) { addScheduleLog(`Invalid cron: ${config.cronExpr}`); return; }
+  scheduledTask = cron.schedule(config.cronExpr, () => runScheduledDownload(config.year || 2025), { timezone: 'America/Los_Angeles' });
+  addScheduleLog(`Schedule active: "${config.cronExpr}" (${config.description || 'custom'})`);
+}
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('dev'));
@@ -33,66 +115,82 @@ if (!CFBD_API_KEY) {
 const cfbd = makeCfbdClient({ baseURL: CFBD_BASE_URL, apiKey: CFBD_API_KEY });
 
 
+// Auth routes
+app.use('/api/auth', makeAuthRouter());
+
 // ⬇️ Mount the router (it will expose /api/teams/season-stats and /api/teams/compare)
 app.use('/api/teams', makeTeamsRouter({
   baseURL: CFBD_BASE_URL,
   apiKey: CFBD_API_KEY
 }));
 
-app.get('/api/data/manifest', (req, res) => {
+// Team logos endpoint — serves name→logo map from DB (falls back to CFBD data)
+app.get('/api/teams/logos', async (req, res) => {
+  const year = Number(req.query.year || 2025);
   try {
-    const year = String(req.query.year || '2025');
-    const dir = path.join(__dirname, '..', 'data', year);
-
-    let entries = [];
-    try {
-      const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
-
-      entries = files.map(fn => {
-        const fullPath = path.join(dir, fn);
-        let downloadedAt = null;
-
-        try {
-          const stats = fs.statSync(fullPath);
-          // mtime = last modified time; good proxy for "when this file was downloaded"
-          downloadedAt = stats.mtime.toISOString();
-        } catch {
-          // if stat fails, just leave downloadedAt as null
-        }
-
-        return {
-          name: fn,
-          downloadedAt,    // you’ll use this in the frontend
-        };
-      });
-    } catch {
-      entries = [];
+    // Try teams collection first
+    const teams = await Team.find({ season: year }, 'school logos').lean();
+    if (teams.length) {
+      const map = {};
+      for (const t of teams) {
+        if (t.school && t.logos?.length) map[t.school] = t.logos[0];
+      }
+      return res.json(map);
     }
+    // Fall back to cfbd_data
+    const data = await readJson(year, 'teams');
+    if (data && Array.isArray(data)) {
+      const map = {};
+      for (const t of data) {
+        if (t.school && t.logos?.length) map[t.school] = t.logos[0];
+      }
+      return res.json(map);
+    }
+    res.json({});
+  } catch {
+    res.json({});
+  }
+});
 
-    // Optional: compute the latest modified time across all files
+app.get('/api/data/manifest', async (req, res) => {
+  try {
+    const year = Number(req.query.year || 2025);
+    const docs = await CfbdData.find({ season: year }, 'slug downloadedAt').lean();
+
+    const entries = docs.map(d => ({
+      name: `${d.slug}.json`,
+      downloadedAt: d.downloadedAt?.toISOString() || null,
+    }));
+
     const lastDownloadedAt = entries.reduce((max, f) => {
       if (!f.downloadedAt) return max;
       if (!max) return f.downloadedAt;
       return f.downloadedAt > max ? f.downloadedAt : max;
     }, null);
 
-    res.json({
-      year,
-      files: entries,       // [{ name, downloadedAt }]
-      lastDownloadedAt,     // e.g. show badge: “Last download: …”
-    });
+    res.json({ year, files: entries, lastDownloadedAt });
   } catch (e) {
-    res.json({
-      year: null,
-      files: [],
-      error: String(e?.message || e),
-    });
+    res.json({ year: null, files: [], error: String(e?.message || e) });
   }
 });
 
 
 app.get('/api/status', (req, res) => {
   res.json({ ok: true, baseUrl: CFBD_BASE_URL });
+});
+
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    const season = Number(req.query.season || 2025);
+    const info = await getCurrentWeekInfo(season);
+    const ballotCount = await Ballot.countDocuments({ season, week: info.week });
+    const totalVoters = await Ballot.distinct('userId', { season }).then(a => a.length);
+    const consensus = info.week > 0 ? await Ballot.find({ season, week: info.week }).lean() : [];
+    const top5 = consensus.length > 0 ? computeConsensus(consensus).slice(0, 5) : [];
+    res.json({ week: info.week, isOpen: info.isOpen, deadline: info.deadline, ballotCount, totalVoters, top5 });
+  } catch (err) {
+    res.json({ week: null, isOpen: false, ballotCount: 0, totalVoters: 0, top5: [] });
+  }
 });
 
 async function tryCandidates(year, candidates) {
@@ -120,9 +218,32 @@ app.post('/api/download', async (req, res) => {
       try {
         const out = await tryCandidates(year, candidates);
         if (out.ok) {
-          const savedTo = writeJson(year, ep.slug, out.data);
+          const savedTo = await writeJson(year, ep.slug, out.data);
           const count = Array.isArray(out.data) ? out.data.length : (out.data ? 1 : 0);
           results.push({ slug: ep.slug, pathTried: out.path, savedTo, count });
+
+          // If this is teams data, also upsert into Teams collection
+          if (ep.slug === 'teams' && Array.isArray(out.data)) {
+            const ops = out.data
+              .filter(t => t.school)
+              .map(t => ({
+                updateOne: {
+                  filter: { school: t.school, season: year },
+                  update: {
+                    school: t.school,
+                    conference: t.conference,
+                    mascot: t.mascot,
+                    abbreviation: t.abbreviation,
+                    logos: t.logos || [],
+                    color: t.color,
+                    altColor: t.alt_color || t.altColor,
+                    season: year,
+                  },
+                  upsert: true,
+                },
+              }));
+            if (ops.length) await Team.bulkWrite(ops);
+          }
         } else {
           errors.push({ slug: ep.slug, pathTried: out.path, status: out.status, message: typeof out.data === 'string' ? out.data : JSON.stringify(out.data).slice(0, 400) });
         }
@@ -140,19 +261,583 @@ app.post('/api/download', async (req, res) => {
 });
 
 
-app.use('/data', express.static(path.join(__dirname, '..', 'data')));
+// Serve cfbd_data from DB instead of filesystem
+app.get('/data/:year/:file', async (req, res) => {
+  const year = Number(req.params.year);
+  const slug = req.params.file.replace(/\.json$/, '');
+  const data = await readJson(year, slug);
+  if (data) return res.json(data);
+  res.status(404).json({ error: 'Not found' });
+});
+
+
+// ---- Ballot API (MongoDB) ----
+
+function nextMonday5pmPST(fromDate) {
+  const d = fromDate ? new Date(fromDate) : new Date();
+  const day = d.getUTCDay();
+  const daysUntilMon = day === 0 ? 1 : day === 1 ? 7 : 8 - day;
+  d.setUTCDate(d.getUTCDate() + daysUntilMon);
+  d.setUTCHours(17 + 8, 0, 0, 0); // 5pm PST = UTC+8
+  return d;
+}
+
+async function getCurrentWeekInfo(season = 2025) {
+  const wk = await Week.findOne({ season }).sort({ week: -1 }).lean();
+  if (!wk) return { week: 1, deadline: null, isOpen: true, season };
+  const isOpen = wk.deadline ? new Date() < new Date(wk.deadline) : wk.isOpen !== false;
+  return { week: wk.week, deadline: wk.deadline, isOpen, season };
+}
+
+async function ensureWeekExists(season = 2025) {
+  const exists = await Week.findOne({ season }).lean();
+  if (!exists) {
+    await Week.create({ season, week: 1, deadline: nextMonday5pmPST(), isOpen: true });
+  }
+}
+
+function computeConsensus(ballots) {
+  if (!ballots.length) return [];
+  const points = new Map(), appearances = new Map(), rankDist = new Map();
+  for (const b of ballots) {
+    if (!Array.isArray(b.rankings)) continue;
+    for (let i = 0; i < b.rankings.length; i++) {
+      const team = b.rankings[i], pts = 25 - i;
+      points.set(team, (points.get(team) || 0) + pts);
+      appearances.set(team, (appearances.get(team) || 0) + 1);
+      if (!rankDist.has(team)) rankDist.set(team, []);
+      rankDist.get(team).push(i + 1);
+    }
+  }
+  const ranked = [...points.entries()]
+    .map(([team, pts]) => {
+      const ranks = rankDist.get(team) || [];
+      const avg = ranks.reduce((a, b) => a + b, 0) / ranks.length;
+      return {
+        team, points: pts,
+        firstPlace: ranks.filter(r => r === 1).length,
+        appearances: appearances.get(team) || 0,
+        avgRank: +avg.toFixed(1), highRank: Math.min(...ranks), lowRank: Math.max(...ranks),
+        variance: +(Math.sqrt(ranks.reduce((s, r) => s + (r - avg) ** 2, 0) / ranks.length)).toFixed(2),
+      };
+    })
+    .sort((a, b) => b.points - a.points);
+  ranked.forEach((t, i) => t.rank = i + 1);
+  return ranked;
+}
+
+// GET /api/weeks
+app.get('/api/weeks', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  await ensureWeekExists(season);
+  const info = await getCurrentWeekInfo(season);
+  const allWeeks = await Week.find({ season }).sort({ week: 1 }).lean();
+
+  const weekData = await Promise.all(allWeeks.map(async w => {
+    const count = await Ballot.countDocuments({ season, week: w.week });
+    return {
+      week: w.week,
+      deadline: w.deadline,
+      open: w.deadline ? new Date() < new Date(w.deadline) : w.isOpen !== false,
+      ballotCount: count,
+    };
+  }));
+
+  res.json({ current: info, weeks: weekData, maxWeek: info.week });
+});
+
+// POST /api/weeks/advance
+app.post('/api/weeks/advance', async (req, res) => {
+  const season = Number(req.body.season || 2025);
+  const current = await Week.findOne({ season }).sort({ week: -1 });
+  if (current) {
+    current.isOpen = false;
+    await current.save();
+  }
+  const newWeek = (current?.week || 0) + 1;
+  const deadline = req.body.deadline ? new Date(req.body.deadline) : nextMonday5pmPST();
+  await Week.create({ season, week: newWeek, deadline, isOpen: true });
+  res.json({ ok: true, previousWeek: current?.week, newWeek, deadline });
+});
+
+// POST /api/weeks/update
+app.post('/api/weeks/update', async (req, res) => {
+  const { week, deadline, open, season = 2025 } = req.body;
+  const wk = await Week.findOne({ season, week });
+  if (!wk) return res.status(404).json({ error: 'Week not found' });
+  if (deadline) wk.deadline = new Date(deadline);
+  if (open !== undefined) wk.isOpen = open;
+  await wk.save();
+  res.json({ ok: true, week: wk });
+});
+
+// GET /api/ballots
+app.get('/api/ballots', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const week = req.query.week ? Number(req.query.week) : null;
+  const filter = { season };
+  if (week) filter.week = week;
+  if (req.query.includeMock !== 'true') filter.userId = { $not: /^mock_/ };
+  const ballots = await Ballot.find(filter).lean();
+  res.json(ballots);
+});
+
+// POST /api/ballots
+app.post('/api/ballots', async (req, res) => {
+  const { userId, userName, rankings, season = 2025 } = req.body;
+  if (!userId || !Array.isArray(rankings) || rankings.length === 0 || rankings.length > 25) {
+    return res.status(400).json({ error: 'Invalid ballot' });
+  }
+  const info = await getCurrentWeekInfo(season);
+  if (!info.isOpen) return res.status(400).json({ error: 'Voting is closed for this week', deadline: info.deadline });
+
+  const ballot = await Ballot.findOneAndUpdate(
+    { userId, season, week: info.week },
+    { userId, userName: userName || 'Anonymous', rankings: rankings.slice(0, 25), season, week: info.week, submittedAt: new Date() },
+    { upsert: true, new: true }
+  );
+  res.json({ ok: true, ballot });
+});
+
+// DELETE /api/ballots/recall
+app.delete('/api/ballots/recall', async (req, res) => {
+  const { userId, season = 2025 } = req.body;
+  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+  const info = await getCurrentWeekInfo(season);
+  if (!info.isOpen) return res.status(400).json({ error: 'Voting is closed — cannot recall ballot' });
+  const result = await Ballot.deleteOne({ userId, season, week: info.week });
+  if (result.deletedCount === 0) return res.status(404).json({ error: 'No ballot found to recall' });
+  res.json({ ok: true });
+});
+
+// GET /api/ballots/consensus
+app.get('/api/ballots/consensus', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const info = await getCurrentWeekInfo(season);
+  const week = Number(req.query.week) || info.week;
+
+  const weekBallots = await Ballot.find({ season, week }).lean();
+  const rankings = computeConsensus(weekBallots);
+
+  const prevBallots = await Ballot.find({ season, week: week - 1 }).lean();
+  const prevRankings = computeConsensus(prevBallots);
+  const prevMap = new Map();
+  prevRankings.forEach(t => prevMap.set(t.team, t.rank));
+  for (const t of rankings) {
+    const prev = prevMap.get(t.team);
+    t.prevRank = prev || null;
+    t.movement = prev ? prev - t.rank : null;
+  }
+
+  res.json({
+    week, season, totalVoters: weekBallots.length, rankings,
+    hasPreviousWeek: prevBallots.length > 0,
+  });
+});
+
+// GET /api/ballots/team-detail?team=...&week=N — rank history + who voted for this team
+app.get('/api/ballots/team-detail', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const team = req.query.team;
+  if (!team) return res.status(400).json({ error: 'Missing team' });
+  const info = await getCurrentWeekInfo(season);
+  const week = Number(req.query.week) || info.week;
+
+  const allWeeks = await Week.find({ season }).sort({ week: 1 }).lean();
+  const rankHistory = [];
+  for (const w of allWeeks) {
+    const ballots = await Ballot.find({ season, week: w.week }).lean();
+    if (!ballots.length) continue;
+    const consensus = computeConsensus(ballots);
+    const row = consensus.find(t => t.team === team);
+    rankHistory.push({ week: w.week, rank: row?.rank || null, points: row?.points || 0, appearances: row?.appearances || 0, totalVoters: ballots.length });
+  }
+
+  // Who ranked this team in the requested week (real voters only)
+  const weekBallots = await Ballot.find({ season, week, userId: { $not: /^mock_/ } }).lean();
+  const voters = [];
+  for (const b of weekBallots) {
+    const idx = (b.rankings || []).indexOf(team);
+    if (idx >= 0) voters.push({ userName: b.userName, userId: b.userId, rank: idx + 1 });
+  }
+  voters.sort((a, b) => a.rank - b.rank);
+
+  res.json({ team, season, week, rankHistory, voters });
+});
+
+// GET /api/ballots/leaderboard
+app.get('/api/ballots/leaderboard', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const includeMock = req.query.includeMock === 'true';
+  const ballotFilter = { season };
+  if (!includeMock) ballotFilter.userId = { $not: /^mock_/ };
+  const allBallots = await Ballot.find(ballotFilter).lean();
+  const allWeeks = [...new Set(allBallots.map(b => b.week))].sort((a, b) => a - b);
+  if (!allWeeks.length) return res.json({ voters: [], weeks: [] });
+
+  const weekConsensus = new Map();
+  for (const wk of allWeeks) {
+    const wBallots = allBallots.filter(b => b.week === wk);
+    const ranked = computeConsensus(wBallots);
+    const map = new Map();
+    ranked.forEach(t => map.set(t.team, t.rank));
+    weekConsensus.set(wk, map);
+  }
+
+  const voterMap = new Map();
+  for (const b of allBallots) {
+    if (!voterMap.has(b.userId)) voterMap.set(b.userId, { userId: b.userId, userName: b.userName, weeks: [] });
+    const voter = voterMap.get(b.userId);
+    const consensus = weekConsensus.get(b.week);
+    if (!consensus) continue;
+
+    let alignmentScore = 0, boldPicks = 0, exactMatches = 0;
+    for (let i = 0; i < b.rankings.length; i++) {
+      const cRank = consensus.get(b.rankings[i]);
+      if (cRank) {
+        const diff = Math.abs((i + 1) - cRank);
+        alignmentScore += Math.max(0, 25 - diff);
+        if (diff === 0) exactMatches++;
+        if (diff >= 8) boldPicks++;
+      } else {
+        boldPicks++;
+      }
+    }
+    voter.weeks.push({ week: b.week, alignment: alignmentScore, bold: boldPicks, exact: exactMatches });
+  }
+
+  const voters = [...voterMap.values()].map(v => {
+    const totalAlignment = v.weeks.reduce((s, w) => s + w.alignment, 0);
+    const totalBold = v.weeks.reduce((s, w) => s + w.bold, 0);
+    const totalExact = v.weeks.reduce((s, w) => s + w.exact, 0);
+    const weeksVoted = v.weeks.length;
+    return {
+      userId: v.userId, userName: v.userName, weeksVoted,
+      avgAlignment: weeksVoted ? +(totalAlignment / weeksVoted).toFixed(1) : 0,
+      totalBold, totalExact,
+      score: +(totalAlignment + totalBold * 2).toFixed(0),
+      weekDetail: v.weeks,
+    };
+  }).sort((a, b) => b.score - a.score);
+
+  voters.forEach((v, i) => v.rank = i + 1);
+  res.json({ voters, weeks: allWeeks });
+});
+
+// GET /api/ballots/history/:userId
+app.get('/api/ballots/history/:userId', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const userBallots = await Ballot.find({ userId: req.params.userId, season }).sort({ week: 1 }).lean();
+  if (!userBallots.length) return res.json({ userId: req.params.userId, weeks: [] });
+
+  const allBallots = await Ballot.find({ season }).lean();
+  const allWeeks = [...new Set(allBallots.map(b => b.week))].sort((a, b) => a - b);
+  const weekConsensus = new Map();
+  for (const wk of allWeeks) {
+    const ranked = computeConsensus(allBallots.filter(b => b.week === wk));
+    const map = new Map();
+    ranked.forEach(t => map.set(t.team, t.rank));
+    weekConsensus.set(wk, map);
+  }
+
+  const weeks = userBallots.map((b, idx) => {
+    const consensus = weekConsensus.get(b.week) || new Map();
+    const prev = idx > 0 ? userBallots[idx - 1] : null;
+    const picks = b.rankings.map((team, i) => {
+      const cRank = consensus.get(team) || null;
+      const prevIdx = prev ? prev.rankings.indexOf(team) : -1;
+      return {
+        team, rank: i + 1, consensusRank: cRank,
+        prevRank: prevIdx >= 0 ? prevIdx + 1 : null,
+        movement: prevIdx >= 0 ? (prevIdx + 1) - (i + 1) : null,
+        isNew: prev ? !prev.rankings.includes(team) : true,
+      };
+    });
+    const dropped = prev ? prev.rankings.filter(t => !b.rankings.includes(t)) : [];
+    return { week: b.week, submittedAt: b.submittedAt, picks, dropped };
+  });
+
+  res.json({ userId: req.params.userId, userName: userBallots[0]?.userName, weeks });
+});
+
+// POST /api/ballots/seed-mock
+app.post('/api/ballots/seed-mock', async (req, res) => {
+  const season = 2025;
+  const existing = await Ballot.findOne({ userId: /^mock_/, season }).lean();
+  if (existing) return res.json({ ok: true, message: 'Mock data already exists — clear first to re-seed' });
+
+  const count = Math.max(1, Math.min(500, Number(req.body.count) || 8));
+
+  const NAME_PARTS = [
+    ['Coach','Gridiron','Tailgate','Bleacher','Stat','Armchair','RedZone','EndZone','Blitz','Sack','Punt','Chalk','GameDay','Snap','TD','Hail','FourthDown','Shotgun','Wildcat','OptionPlay','Scramble','Audible','Nickel','Safety','Blitz','TwoPoint','OnsideKick','HardCount','JetSweep','RPO'],
+    ['Pick','Guru','Tony','Fan','Nerd','OC','Rick','Eddie','Brenda','Master','God','Chris','Gary','Sam','Tina','Mary','Jack','Quinn','Zach','Pete','Roy','Dee','Max','Kai','Drew','Val','Ace','Ty','Bo','CJ'],
+    ['42','99','55','88','12','7','33','21','44','66','77','3','18','25','14','9','50','81','6','27','36','45','11','23','19','8','31','70','4','16'],
+  ];
+  function mockName(i) {
+    return NAME_PARTS[0][i % NAME_PARTS[0].length] + NAME_PARTS[1][i % NAME_PARTS[1].length] + NAME_PARTS[2][i % NAME_PARTS[2].length];
+  }
+
+  // Base rankings per week — the "consensus" that voters vary around
+  const BASE = [
+    ['Ohio State','Georgia','Texas','Oregon','Penn State','Alabama','Ole Miss','Michigan','Tennessee','Notre Dame','LSU','USC','Missouri','Florida State','Oklahoma','Clemson','Utah','Kansas State','Washington','NC State','Louisville','Iowa','Arizona','Tulane','SMU'],
+    ['Oregon','Ohio State','Georgia','Texas','Penn State','Ole Miss','Michigan','Tennessee','Notre Dame','Alabama','LSU','USC','Missouri','Clemson','Oklahoma','Boise State','Utah','Kansas State','Louisville','Washington','Iowa','Florida State','NC State','Arizona','SMU'],
+    ['Oregon','Ohio State','Georgia','Penn State','Ole Miss','Texas','Michigan','Tennessee','Notre Dame','Boise State','Alabama','LSU','USC','Clemson','Missouri','Indiana','Oklahoma','Kansas State','Utah','Louisville','Washington','Iowa','Florida State','NC State','SMU'],
+  ];
+
+  // Seeded random for deterministic-per-voter results
+  function seededRng(seed) {
+    let s = seed;
+    return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  }
+
+  // Generate a ballot by applying random adjacent swaps to the base, more swaps in the back half
+  function generateBallot(base, voterIndex, weekIndex) {
+    const ballot = [...base];
+    const rng = seededRng(voterIndex * 1000 + weekIndex * 31 + 7);
+    // Top 4: occasional swap (30% chance per pair)
+    for (let j = 0; j < 3; j++) { if (rng() < 0.3) { [ballot[j], ballot[j + 1]] = [ballot[j + 1], ballot[j]]; } }
+    // 5-10: moderate swaps
+    for (let j = 4; j < 9; j++) { if (rng() < 0.5) { [ballot[j], ballot[j + 1]] = [ballot[j + 1], ballot[j]]; } }
+    // 11-25: heavier shuffling — swap with random neighbor within 3 spots
+    for (let j = 10; j < 25; j++) {
+      const reach = Math.floor(rng() * 4);
+      const target = Math.min(24, Math.max(10, j + (rng() < 0.5 ? reach : -reach)));
+      if (target !== j) { [ballot[j], ballot[target]] = [ballot[target], ballot[j]]; }
+    }
+    return ballot;
+  }
+
+  // Anchor seeding to the current week so the seeded data shows on the default view.
+  // Seed the current week and the (BASE.length - 1) weeks before it.
+  const cur = await getCurrentWeekInfo(season);
+  const endWeek = Math.max(1, cur.week);
+  const startWeek = Math.max(1, endWeek - (BASE.length - 1));
+  const seedWeeks = [];
+  for (let wk = startWeek; wk <= endWeek; wk++) seedWeeks.push(wk);
+
+  // Ensure week docs exist. Prior weeks are closed with a past deadline; the
+  // current week keeps its existing deadline/open state (only set on insert).
+  const weekOps = seedWeeks.map(wk => {
+    if (wk === endWeek) {
+      return {
+        updateOne: {
+          filter: { season, week: wk },
+          update: { $setOnInsert: { season, week: wk, deadline: nextMonday5pmPST(), isOpen: true } },
+          upsert: true,
+        },
+      };
+    }
+    const deadline = new Date(Date.now() - (endWeek - wk) * 7 * 86400000);
+    deadline.setUTCHours(1, 0, 0, 0);
+    return {
+      updateOne: {
+        filter: { season, week: wk },
+        update: { $set: { deadline, isOpen: false }, $setOnInsert: { season, week: wk } },
+        upsert: true,
+      },
+    };
+  });
+  await Week.bulkWrite(weekOps);
+
+  // Create ballots — earliest seeded week uses BASE[0] so week-over-week movement reads correctly.
+  const ballotOps = [];
+  seedWeeks.forEach((wk, idx) => {
+    const base = BASE[Math.min(idx, BASE.length - 1)];
+    const weeksAgo = endWeek - wk;
+    for (let i = 0; i < count; i++) {
+      ballotOps.push({
+        updateOne: {
+          filter: { userId: `mock_${i}`, season, week: wk },
+          update: {
+            userId: `mock_${i}`,
+            userName: mockName(i),
+            rankings: generateBallot(base, i, idx),
+            week: wk, season,
+            submittedAt: new Date(Date.now() - weeksAgo * 7 * 86400000 + Math.random() * 86400000 * 2),
+          },
+          upsert: true,
+        },
+      });
+    }
+  });
+  await Ballot.bulkWrite(ballotOps);
+  res.json({ ok: true, added: seedWeeks.length * count, weeks: seedWeeks.length, voters: count, seededWeeks: seedWeeks });
+});
+
+// POST /api/ballots/clear-mock
+app.post('/api/ballots/clear-mock', async (req, res) => {
+  const result = await Ballot.deleteMany({ userId: /^mock_/ });
+  res.json({ ok: true, deleted: result.deletedCount });
+});
+
+// ---- Email notifications (deadline reminders + weekly recap) ----
+const DEFAULT_EMAIL_CONFIG = { remindersEnabled: false, reminderLeadHours: 24, recapEnabled: false, reminded: {} };
+
+async function loadEmailConfig() {
+  const doc = await CfbdData.findOne({ season: 0, slug: 'email_config' }).lean();
+  return { ...DEFAULT_EMAIL_CONFIG, ...(doc?.data || {}) };
+}
+async function saveEmailConfig(cfg) {
+  await CfbdData.findOneAndUpdate(
+    { season: 0, slug: 'email_config' },
+    { data: cfg, downloadedAt: new Date() },
+    { upsert: true }
+  );
+}
+
+// Real (non-mock) users who have an email on file.
+async function emailableUsers() {
+  return User.find({ email: { $exists: true, $ne: null } }).lean();
+}
+
+async function sendDeadlineReminders(season = 2025, { force = false } = {}) {
+  const cfg = await loadEmailConfig();
+  const info = await getCurrentWeekInfo(season);
+  if (!info.isOpen || !info.deadline) return { sent: 0, reason: 'voting not open' };
+
+  const hoursLeft = (new Date(info.deadline).getTime() - Date.now()) / 3600000;
+  if (!force && (hoursLeft <= 0 || hoursLeft > (cfg.reminderLeadHours || 24))) {
+    return { sent: 0, reason: `outside lead window (${hoursLeft.toFixed(1)}h left)` };
+  }
+
+  const users = await emailableUsers();
+  const votedIds = new Set(await Ballot.distinct('userId', { season, week: info.week }));
+  const remindedThisWeek = new Set((cfg.reminded?.[info.week]) || []);
+
+  let sent = 0;
+  for (const u of users) {
+    const uid = String(u._id);
+    if (votedIds.has(uid)) continue;
+    if (!force && remindedThisWeek.has(uid)) continue;
+    const { subject, html } = deadlineReminderEmail({ name: u.name, week: info.week, deadline: info.deadline, appUrl: APP_URL });
+    const r = await sendEmail({ to: u.email, subject, html });
+    if (r.ok) { sent++; remindedThisWeek.add(uid); }
+  }
+  cfg.reminded = { ...(cfg.reminded || {}), [info.week]: [...remindedThisWeek] };
+  await saveEmailConfig(cfg);
+  return { sent, week: info.week };
+}
+
+async function sendWeeklyRecap(season = 2025, weekArg) {
+  const info = await getCurrentWeekInfo(season);
+  const week = weekArg || info.week;
+  const ballots = await Ballot.find({ season, week }).lean();
+  if (!ballots.length) return { sent: 0, reason: 'no ballots for week' };
+
+  const consensus = computeConsensus(ballots);
+  const top10 = consensus.slice(0, 10).map(t => ({ team: t.team, points: t.points }));
+  const prev = await Ballot.find({ season, week: week - 1 }).lean();
+  const prevRank = new Map(computeConsensus(prev).map(t => [t.team, t.rank]));
+  const withMove = consensus.slice(0, 25).map(t => ({ ...t, movement: prevRank.has(t.team) ? prevRank.get(t.team) - t.rank : null }));
+  const biggestRiser = withMove.filter(t => t.movement > 0).sort((a, b) => b.movement - a.movement)[0] || null;
+
+  const consensusRank = new Map(consensus.map(t => [t.team, t.rank]));
+  const users = await emailableUsers();
+  const byUser = new Map(ballots.map(b => [String(b.userId), b]));
+
+  let sent = 0;
+  for (const u of users) {
+    const mine = byUser.get(String(u._id));
+    let yourAccuracy = null;
+    if (mine?.rankings?.length) {
+      const agree = mine.rankings.filter((team, i) => {
+        const cr = consensusRank.get(team);
+        return cr && Math.abs((i + 1) - cr) <= 2;
+      }).length;
+      yourAccuracy = Math.round((agree / mine.rankings.length) * 100);
+    }
+    const { subject, html } = weeklyRecapEmail({
+      name: u.name, week, top10,
+      biggestRiser: biggestRiser ? { team: biggestRiser.team, movement: biggestRiser.movement } : null,
+      yourAccuracy, appUrl: APP_URL,
+    });
+    const r = await sendEmail({ to: u.email, subject, html });
+    if (r.ok) sent++;
+  }
+  return { sent, week };
+}
+
+// Hourly reminder sweep (idempotent per user per week via cfg.reminded)
+cron.schedule('0 * * * *', async () => {
+  try {
+    const cfg = await loadEmailConfig();
+    if (cfg.remindersEnabled) await sendDeadlineReminders(2025);
+  } catch (e) { console.error('[email] reminder sweep failed:', e.message); }
+}, { timezone: 'America/Los_Angeles' });
+
+app.get('/api/email/config', async (req, res) => {
+  const cfg = await loadEmailConfig();
+  const { SMTP_HOST, SMTP_USER } = process.env;
+  res.json({ config: { remindersEnabled: cfg.remindersEnabled, reminderLeadHours: cfg.reminderLeadHours, recapEnabled: cfg.recapEnabled },
+    providerConfigured: !!(SMTP_HOST && SMTP_USER), log: getEmailLog().slice(-30) });
+});
+
+app.post('/api/email/config', async (req, res) => {
+  const cfg = await loadEmailConfig();
+  const { remindersEnabled, reminderLeadHours, recapEnabled } = req.body || {};
+  if (remindersEnabled !== undefined) cfg.remindersEnabled = !!remindersEnabled;
+  if (recapEnabled !== undefined) cfg.recapEnabled = !!recapEnabled;
+  if (reminderLeadHours !== undefined) cfg.reminderLeadHours = Math.max(1, Math.min(168, Number(reminderLeadHours) || 24));
+  await saveEmailConfig(cfg);
+  res.json({ ok: true, config: { remindersEnabled: cfg.remindersEnabled, reminderLeadHours: cfg.reminderLeadHours, recapEnabled: cfg.recapEnabled } });
+});
+
+app.post('/api/email/test', async (req, res) => {
+  const to = req.body?.to;
+  if (!to) return res.status(400).json({ error: 'Missing recipient' });
+  const { subject, html } = deadlineReminderEmail({ name: 'there', week: '—', deadline: null, appUrl: APP_URL });
+  const r = await sendEmail({ to, subject: '[Test] ' + subject, html });
+  res.json({ ok: r.ok, method: r.method, error: r.error });
+});
+
+app.post('/api/email/send-reminders', async (req, res) => {
+  try { res.json({ ok: true, ...(await sendDeadlineReminders(2025, { force: !!req.body?.force })) }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/email/send-recap', async (req, res) => {
+  try { res.json({ ok: true, ...(await sendWeeklyRecap(2025, req.body?.week ? Number(req.body.week) : undefined)) }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- Schedule API ----
+app.get('/api/schedule', async (req, res) => {
+  const config = await loadSchedule();
+  res.json({ config: config || { enabled: false, cronExpr: '', day: 'tuesday', hour: 6, minute: 0, year: 2025 }, running: !!scheduledTask, log: scheduleLog.slice(-20) });
+});
+
+app.post('/api/schedule', async (req, res) => {
+  const { enabled, day, hour, minute, year = 2025 } = req.body;
+  const DAYS = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+  const dayNum = DAYS[(day || 'tuesday').toLowerCase()];
+  if (dayNum === undefined) return res.status(400).json({ error: 'Invalid day' });
+  const h = Math.max(0, Math.min(23, Number(hour) || 6));
+  const m = Math.max(0, Math.min(59, Number(minute) || 0));
+  const cronExpr = `${m} ${h} * * ${dayNum}`;
+  const description = `Every ${day} at ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} PST`;
+  const config = { enabled: !!enabled, cronExpr, day, hour: h, minute: m, year, description };
+  await saveSchedule(config);
+  applySchedule(config);
+  res.json({ ok: true, config });
+});
+
+app.post('/api/schedule/run-now', async (req, res) => {
+  const year = Number(req.body?.year || 2025);
+  res.json({ ok: true, message: 'Download started' });
+  runScheduledDownload(year);
+});
 
 // Weekly rankings endpoint — computes rankings for each week server-side
-import { rankTeams } from '../../client/src/lib/rankAlgo.js';
+import { rankTeams, buildTeamsIndex } from '../../client/src/lib/rankAlgo.js';
 
 const weeklyCache = new Map();
 
-function computeWeeklyRankings(year) {
-  const dataDir = path.join(__dirname, '..', 'data', year);
-  const teamsRaw = JSON.parse(fs.readFileSync(path.join(dataDir, 'teams.json'), 'utf-8'));
-  const gamesRaw = JSON.parse(fs.readFileSync(path.join(dataDir, 'games-regular.json'), 'utf-8'));
-  let spRaw = [];
-  try { spRaw = JSON.parse(fs.readFileSync(path.join(dataDir, 'sp-ratings.json'), 'utf-8')); } catch {}
+async function computeWeeklyRankings(year) {
+  const teamsRaw = await readJson(Number(year), 'teams');
+  const gamesRaw = await readJson(Number(year), 'games-regular');
+  let spRaw = await readJson(Number(year), 'sp-ratings') || [];
+
+  if (!teamsRaw || !gamesRaw) throw new Error(`No CFBD data for ${year} — download it first`);
 
   const weekKey = (g) => g.week ?? g.game_week ?? g.gameWeek ?? 1;
   let maxWeek = 0;
@@ -184,12 +869,12 @@ function computeWeeklyRankings(year) {
   return { year, maxWeek, weeks };
 }
 
-app.get('/api/rankings/weekly', (req, res) => {
+app.get('/api/rankings/weekly', async (req, res) => {
   const year = String(req.query.year || '2025');
 
   try {
     if (!weeklyCache.has(year)) {
-      weeklyCache.set(year, computeWeeklyRankings(year));
+      weeklyCache.set(year, await computeWeeklyRankings(year));
     }
     res.json(weeklyCache.get(year));
   } catch (e) {
@@ -197,18 +882,120 @@ app.get('/api/rankings/weekly', (req, res) => {
   }
 });
 
+// ---- Team résumés (powers ballot resume cards, sanity check, smart-start, team modal) ----
+const resumeCache = new Map(); // year -> { at, data }
 
-app.listen(PORT, () => {
-  log(`Server listening on http://localhost:${PORT}`);
+async function computeResumes(year) {
+  const teamsRaw = await readJson(Number(year), 'teams');
+  const gamesRaw = await readJson(Number(year), 'games-regular');
+  const spRaw = await readJson(Number(year), 'sp-ratings') || [];
+  if (!teamsRaw || !gamesRaw) throw new Error(`No CFBD data for ${year}`);
 
-  // Pre-compute weekly rankings in the background after startup
-  setImmediate(() => {
-    try {
-      log('Pre-computing weekly rankings for 2025...');
-      weeklyCache.set('2025', computeWeeklyRankings('2025'));
-      log('Weekly rankings cached.');
-    } catch (e) {
-      log(`Weekly rankings pre-compute failed: ${e.message}`);
+  const ranked = rankTeams({ teamsRaw, gamesRaw, spRaw });
+  const rankOf = new Map(ranked.map(t => [t.name, t.rank]));
+
+  const teams = {};
+  for (const t of ranked) {
+    const games = (t.games || []).map(g => ({
+      opp: g.opp,
+      res: g.for > g.against ? 'W' : 'L',
+      pf: g.for, pa: g.against,
+      week: g.week,
+      neutral: !!g.neutral,
+      home: !!g.home,
+      oppRank: rankOf.get(g.opp) || null,
+    })).sort((a, b) => (a.week || 0) - (b.week || 0));
+
+    const wins = games.filter(g => g.res === 'W');
+    const losses = games.filter(g => g.res === 'L');
+    const rankedWins = wins.filter(g => g.oppRank).sort((a, b) => a.oppRank - b.oppRank);
+    const badLosses = losses.filter(g => g.oppRank).sort((a, b) => b.oppRank - a.oppRank);
+
+    teams[t.name] = {
+      rank: t.rank,
+      conference: t.conference,
+      w: t.w, l: t.l,
+      record: `${t.w}-${t.l}`,
+      sosRank: t.sosRank || null,
+      bestWin: rankedWins[0] ? { opp: rankedWins[0].opp, oppRank: rankedWins[0].oppRank, score: `${rankedWins[0].pf}-${rankedWins[0].pa}` } : null,
+      worstLoss: badLosses[0] ? { opp: badLosses[0].opp, oppRank: badLosses[0].oppRank, score: `${badLosses[0].pf}-${badLosses[0].pa}` } : null,
+      beat: wins.map(g => g.opp),
+      lostTo: losses.map(g => g.opp),
+      games,
+    };
+  }
+
+  // Smart-start presets
+  const computer = ranked.slice(0, 25).map(t => t.name);
+
+  // AP Top 25 — map CFBD school names to our canonical naming via the team index
+  let ap = [];
+  try {
+    const polls = await readJson(Number(year), 'polls-rankings') || [];
+    const { byName } = buildTeamsIndex(teamsRaw);
+    const regularAP = polls
+      .filter(w => w.seasonType === 'regular')
+      .flatMap(w => (w.polls || []).filter(p => p.poll === 'AP Top 25').map(p => ({ week: w.week, ranks: p.ranks })))
+      .sort((a, b) => b.week - a.week)[0];
+    if (regularAP) {
+      ap = regularAP.ranks
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, 25)
+        .map(r => byName.get((r.school || '').toLowerCase()) || r.school);
+    }
+  } catch {}
+
+  return { season: Number(year), teams, presets: { computer, ap } };
+}
+
+app.get('/api/teams/resumes', async (req, res) => {
+  const year = String(req.query.season || req.query.year || '2025');
+  try {
+    const cached = resumeCache.get(year);
+    if (cached && Date.now() - cached.at < 10 * 60 * 1000) return res.json(cached.data);
+    const data = await computeResumes(year);
+    resumeCache.set(year, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Serve static client build for production (Heroku)
+const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
+import fs from 'fs';
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api/') && !req.path.startsWith('/data/')) {
+      res.sendFile(path.join(clientDist, 'index.html'));
     }
   });
+}
+
+// Connect to DB, then start server
+connectDB().then(() => {
+  app.listen(PORT, () => {
+    log(`Server listening on http://localhost:${PORT}`);
+
+    setImmediate(async () => {
+      try {
+        log('Pre-computing weekly rankings for 2025...');
+        weeklyCache.set('2025', await computeWeeklyRankings('2025'));
+        log('Weekly rankings cached.');
+      } catch (e) {
+        log(`Weekly rankings pre-compute failed: ${e.message}`);
+      }
+      // Restore saved schedule
+      try {
+        const config = await loadSchedule();
+        if (config?.enabled) applySchedule(config);
+      } catch (e) {
+        log(`Failed to restore schedule: ${e.message}`);
+      }
+    });
+  });
+}).catch(err => {
+  console.error('Failed to start:', err.message);
+  process.exit(1);
 });

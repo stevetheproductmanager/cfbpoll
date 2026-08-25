@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { confColor, confLogo } from '../lib/confColors'
+import { confColor, confLogo } from '../lib/conferenceUtils.js'
 
 export default function ConfBadge({ conference, size = 20 }) {
   const logo = confLogo(conference)

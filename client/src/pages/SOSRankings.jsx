@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRankings } from '../store/RankingsContext.jsx'
-import { confColor } from '../lib/confColors'
+import { confColor } from '../lib/conferenceUtils.js'
 import ConfBadge from '../components/ConfBadge.jsx'
 import { useTheme } from '../theme/ThemeProvider.jsx'
 import TeamLogo from '../components/TeamLogo.jsx'
