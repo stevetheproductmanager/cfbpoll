@@ -20,9 +20,17 @@ const customPollSchema = new mongoose.Schema({
     team: String,
     rank: Number,
     score: Number,
+    officialRank: Number,
+    breakdown: {
+      efficiency: Number, results: Number, sos: Number, quality: Number, momentum: Number,
+    },
   }],
+  // When true, this poll's Top 25 auto-submits as its owner's Computer ballot
+  // every time it's recomputed (manual recompute or the weekly refresh).
+  published: { type: Boolean, default: false },
 }, { timestamps: true });
 
 customPollSchema.index({ userId: 1, season: 1 });
+customPollSchema.index({ published: 1, season: 1 });
 
 export default mongoose.model('CustomPoll', customPollSchema);

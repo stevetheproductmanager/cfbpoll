@@ -1338,9 +1338,23 @@ async function computeCustomRanking(season, weights) {
   const spRaw = await readJson(Number(season), 'sp-ratings') || [];
   if (!teamsRaw || !gamesRaw) throw new Error(`No CFBD data for season ${season} — an admin needs to download it first`);
   const ranked = rankTeams({ teamsRaw, gamesRaw, spRaw, weights });
+  // Official (default-weight) ranking, computed from the same underlying data,
+  // so each custom poll can show how it diverges from the site's model.
+  const official = rankTeams({ teamsRaw, gamesRaw, spRaw, weights: null });
+  const officialRankByTeam = new Map(official.map(t => [t.name, t.rank]));
   return ranked.slice(0, 25).map(t => ({
     team: t.name, rank: t.rank, score: +((t.score || 0).toFixed(4)),
     record: `${t.w}-${t.l}`, conference: t.conference,
+    officialRank: officialRankByTeam.get(t.name) || null,
+    // Per-component breakdown (0..1-ish scale, same inputs the weights blend) —
+    // lets the UI explain *why* a team landed where it did.
+    breakdown: {
+      efficiency: +(((0.55 * (t.offPct ?? 0.5)) + (0.45 * (t.defPct ?? 0.5))).toFixed(3)),
+      results: +((t.results || 0).toFixed(3)),
+      sos: +((t.sos || 0).toFixed(3)),
+      quality: +((t.quality || 0).toFixed(3)),
+      momentum: +((t.momentum || 0).toFixed(3)),
+    },
   }));
 }
 
@@ -1386,12 +1400,62 @@ app.get('/api/custom-polls/mine', requireAuth, async (req, res) => {
   res.json({ polls });
 });
 
+// Daily sweep: recompute every published custom poll against current data and
+// re-submit it as its owner's Computer ballot, so a "Publish"d poll actually
+// stays live week over week instead of freezing at whatever it looked like
+// the moment it was published.
+cron.schedule('30 5 * * *', async () => {
+  try {
+    const polls = await CustomPoll.find({ published: true });
+    let ok = 0, failed = 0;
+    for (const poll of polls) {
+      try {
+        poll.rankings = await computeCustomRanking(poll.season, poll.weights);
+        await poll.save();
+        await publishBallotForPoll(poll);
+        ok++;
+      } catch { failed++; }
+    }
+    if (polls.length) log(`[custom-polls] daily refresh: ${ok} updated, ${failed} failed`);
+  } catch (e) { console.error('[custom-polls] daily refresh sweep failed:', e.message); }
+}, { timezone: 'America/Los_Angeles' });
+
+// Public gallery of polls their owners have chosen to publish/share.
+// (Registered before the /:id route below so "gallery" doesn't get parsed as an id.)
+app.get('/api/custom-polls/gallery', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const polls = await CustomPoll.find({ published: true, season })
+    .sort({ updatedAt: -1 }).limit(50)
+    .select('name userName season weights rankings updatedAt').lean();
+  res.json({ polls });
+});
+
 // Public — lets a saved poll be viewed/shared without auth.
 app.get('/api/custom-polls/:id', async (req, res) => {
   const poll = await CustomPoll.findById(req.params.id).lean().catch(() => null);
   if (!poll) return res.status(404).json({ error: 'Poll not found' });
   res.json({ poll });
 });
+
+// Upsert the owner's Computer ballot for the current open week from a
+// published poll's saved Top 25 — same write path as a manual "Computer"
+// ballot submission on My Ballot, just automated.
+async function publishBallotForPoll(poll) {
+  const settings = await loadSiteSettings();
+  const info = await getCurrentWeekInfo(poll.season);
+  if (!info.isOpen) return null; // nothing open to submit into right now
+  const rankings = poll.rankings.map(r => r.team).slice(0, settings.maxBallotSize);
+  if (!rankings.length) return null;
+  return Ballot.findOneAndUpdate(
+    { userId: poll.userId, season: poll.season, week: info.week },
+    {
+      userId: poll.userId, userName: poll.userName || 'Anonymous', rankings, season: poll.season, week: info.week,
+      ballotType: 'computer', customPollId: String(poll._id),
+      submittedAt: new Date(),
+    },
+    { upsert: true, new: true }
+  );
+}
 
 app.post('/api/custom-polls/:id/recompute', requireAuth, async (req, res) => {
   const poll = await CustomPoll.findById(req.params.id);
@@ -1400,10 +1464,25 @@ app.post('/api/custom-polls/:id/recompute', requireAuth, async (req, res) => {
   try {
     poll.rankings = await computeCustomRanking(poll.season, poll.weights);
     await poll.save();
+    if (poll.published) await publishBallotForPoll(poll).catch(() => {});
     res.json({ ok: true, poll });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Toggle whether this poll auto-submits as the owner's Computer ballot.
+app.post('/api/custom-polls/:id/publish', requireAuth, async (req, res) => {
+  const poll = await CustomPoll.findById(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'Poll not found' });
+  if (poll.userId !== req.user.id) return res.status(403).json({ error: 'Not your poll' });
+  poll.published = !!req.body.published;
+  await poll.save();
+  let ballot = null;
+  if (poll.published) {
+    try { ballot = await publishBallotForPoll(poll); } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+  res.json({ ok: true, poll, ballot });
 });
 
 app.delete('/api/custom-polls/:id', requireAuth, async (req, res) => {

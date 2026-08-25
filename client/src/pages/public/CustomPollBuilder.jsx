@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
 import { useToast } from '../../store/ToastContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
@@ -13,6 +13,15 @@ const METRICS = [
   { key: 'sos', label: 'Strength of Schedule', color: 'var(--warn)', desc: "How tough the team's opponents have been, iterated across the whole season." },
   { key: 'quality', label: 'Résumé Quality', color: 'var(--accent)', desc: 'Credit for beating good teams, penalties for bad losses.' },
   { key: 'momentum', label: 'Momentum', color: 'var(--err)', desc: 'Whether the team is trending up or down over its last few games.' },
+]
+
+// Quick-start weight combos so the sliders aren't intimidating on first visit.
+const PRESETS = [
+  { key: 'balanced', label: '⚖️ Balanced', weights: DEFAULT_WEIGHTS },
+  { key: 'resume', label: '📋 Résumé Voter', weights: { efficiency: 15, results: 30, sos: 20, quality: 30, momentum: 5 } },
+  { key: 'eyeball', label: '👁️ Eyeball Test', weights: { efficiency: 55, results: 25, sos: 5, quality: 5, momentum: 10 } },
+  { key: 'analytics', label: '🤖 Analytics Nerd', weights: { efficiency: 45, results: 10, sos: 25, quality: 10, momentum: 10 } },
+  { key: 'hot', label: '🔥 Hot Hand', weights: { efficiency: 25, results: 20, sos: 10, quality: 10, momentum: 35 } },
 ]
 
 function Slider({ metric, value, onChange, pct }) {
@@ -47,12 +56,15 @@ function WeightBar({ weights }) {
 export default function CustomPollBuilder() {
   const { user, authHeaders } = useAuth()
   const toast = useToast()
+  const [searchParams] = useSearchParams()
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const [mine, setMine] = useState([])
+  const [expanded, setExpanded] = useState(null) // team name whose breakdown is open
+  const [publishing, setPublishing] = useState(null) // poll id currently toggling
 
   const loadMine = useCallback(() => {
     if (!user) return
@@ -60,6 +72,27 @@ export default function CustomPollBuilder() {
   }, [user, authHeaders])
 
   useEffect(() => { loadMine() }, [loadMine])
+
+  // Remix support: /custom-poll?remix=<id> preloads that poll's weights (and
+  // a "Remix of ..." name) so a user can clone and tweak someone else's poll.
+  useEffect(() => {
+    const remixId = searchParams.get('remix')
+    if (!remixId) return
+    fetch(`/api/custom-polls/${remixId}`).then(r => r.json()).then(d => {
+      if (!d.poll) return
+      const w = d.poll.weights || {}
+      setWeights({
+        efficiency: Math.round((w.efficiency || 0) * 100),
+        results: Math.round((w.results || 0) * 100),
+        sos: Math.round((w.sos || 0) * 100),
+        quality: Math.round((w.quality || 0) * 100),
+        momentum: Math.round((w.momentum || 0) * 100),
+      })
+      setName(`Remix of ${d.poll.name}`)
+      toast.info(`Loaded "${d.poll.name}"'s weights — tweak and save as your own`)
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const total = useMemo(() => Object.values(weights).reduce((a, b) => a + b, 0) || 1, [weights])
   const pct = useMemo(() => {
@@ -69,6 +102,7 @@ export default function CustomPollBuilder() {
   }, [weights, total])
 
   const setWeight = (key, value) => setWeights(prev => ({ ...prev, [key]: value }))
+  const applyPreset = (p) => { setWeights(p.weights); toast.info(`Loaded "${p.label.split(' ').slice(1).join(' ')}" weights`) }
 
   const compute = async () => {
     if (Object.values(weights).every(v => v === 0)) { toast.error('At least one metric must be above 0'); return }
@@ -111,6 +145,33 @@ export default function CustomPollBuilder() {
     } catch { toast.error('Could not reach server') }
   }
 
+  // Publishing makes a poll auto-submit as the owner's Computer ballot each
+  // week (and lists it in the public gallery for others to browse/remix).
+  const togglePublish = async (poll) => {
+    setPublishing(poll._id)
+    try {
+      const r = await fetch(`/api/custom-polls/${poll._id}/publish`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ published: !poll.published }),
+      })
+      const d = await r.json()
+      if (!r.ok) { toast.error(d.error || 'Could not update poll'); setPublishing(null); return }
+      toast.success(d.poll.published ? `"${poll.name}" published — it'll auto-submit as your Computer ballot each week` : `"${poll.name}" unpublished`)
+      loadMine()
+    } catch { toast.error('Could not reach server') }
+    setPublishing(null)
+  }
+
+  const recomputePoll = async (poll) => {
+    try {
+      const r = await fetch(`/api/custom-polls/${poll._id}/recompute`, { method: 'POST', headers: authHeaders() })
+      const d = await r.json()
+      if (!r.ok) { toast.error(d.error || 'Could not recompute'); return }
+      toast.success(`"${poll.name}" refreshed against current data`)
+      loadMine()
+    } catch { toast.error('Could not reach server') }
+  }
+
   if (!user) {
     return (
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '24px 24px 80px', textAlign: 'center' }}>
@@ -133,6 +194,7 @@ export default function CustomPollBuilder() {
         <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 640, margin: '0 auto' }}>
           Design your own ranking algorithm. Drag the sliders to weight what matters to you, compute a live Top 25 off this season's real data, then save it as your own poll.
         </p>
+        <Link to="/custom-poll/gallery" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>🖼️ Browse the public gallery →</Link>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 20, alignItems: 'start' }} className="ballot-grid">
@@ -140,6 +202,13 @@ export default function CustomPollBuilder() {
         <div className="card" style={{ marginTop: 0 }}>
           <h3 style={{ marginBottom: 4 }}>Weight Your Metrics</h3>
           <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Values are automatically normalized to 100%.</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+            {PRESETS.map(p => (
+              <button key={p.key} className="btn btn-ghost" onClick={() => applyPreset(p)} style={{ fontSize: 11, padding: '4px 8px' }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
           <WeightBar weights={weights} />
           {METRICS.map(m => (
             <Slider key={m.key} metric={m} value={weights[m.key]} onChange={setWeight} pct={pct[m.key]} />
@@ -172,17 +241,46 @@ export default function CustomPollBuilder() {
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>2025 season data</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {result.rankings.map((t, i) => (
-                  <div key={t.team} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 16px', borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
-                    <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--brand2)', minWidth: 24, textAlign: 'right' }}>{t.rank}</span>
-                    <TeamLogo name={t.team} size={26} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{t.team}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t.record} · {t.conference}</div>
+                {result.rankings.map((t, i) => {
+                  const delta = t.officialRank != null ? t.officialRank - t.rank : null // positive = ranked higher than official model
+                  const isOpen = expanded === t.team
+                  return (
+                    <div key={t.team} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
+                      <div
+                        onClick={() => setExpanded(isOpen ? null : t.team)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 16px', cursor: 'pointer' }}
+                      >
+                        <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--brand2)', minWidth: 24, textAlign: 'right' }}>{t.rank}</span>
+                        <TeamLogo name={t.team} size={26} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{t.team}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t.record} · {t.conference}</div>
+                        </div>
+                        {delta != null && delta !== 0 && (
+                          <span title={`Official computer model ranks this team #${t.officialRank}`} style={{
+                            fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 6,
+                            color: delta > 0 ? 'var(--ok)' : 'var(--err)',
+                            background: delta > 0 ? 'var(--ok-muted, rgba(46,204,113,0.12))' : 'var(--err-muted)',
+                          }}>{delta > 0 ? '▲' : '▼'}{Math.abs(delta)} vs official</span>
+                        )}
+                        <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>{t.score}</span>
+                      </div>
+                      {isOpen && t.breakdown && (
+                        <div style={{ padding: '4px 16px 12px 60px', display: 'flex', flexWrap: 'wrap', gap: '4px 14px' }}>
+                          {METRICS.map(m => (
+                            <span key={m.key} style={{ fontSize: 11, color: 'var(--muted)' }}>
+                              <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>{' '}
+                              {t.breakdown[m.key] > 0 ? '+' : ''}{t.breakdown[m.key]}
+                            </span>
+                          ))}
+                          {t.officialRank != null && (
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>Official model: #{t.officialRank}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>{t.score}</span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           ) : (
@@ -200,9 +298,18 @@ export default function CustomPollBuilder() {
                 {mine.map(p => (
                   <div key={p._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 10, flexWrap: 'wrap' }}>
                     <div style={{ flex: 1, minWidth: 140 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {p.name}
+                        {p.published && <span title="Auto-submits as your Computer ballot each week" style={{ fontSize: 10, fontWeight: 700, color: 'var(--brand2)', background: 'var(--brand-glow)', padding: '1px 6px', borderRadius: 6 }}>LIVE</span>}
+                      </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>#1 {p.rankings?.[0]?.team || '—'} · saved {new Date(p.updatedAt).toLocaleDateString()}</div>
                     </div>
+                    <button className="btn btn-ghost" onClick={() => recomputePoll(p)} style={{ fontSize: 11, padding: '4px 10px' }} title="Recompute against current data">↻ Refresh</button>
+                    <button
+                      className="btn btn-ghost" onClick={() => togglePublish(p)} disabled={publishing === p._id}
+                      style={{ fontSize: 11, padding: '4px 10px', color: p.published ? 'var(--warn)' : 'var(--ok)' }}
+                      title={p.published ? 'Stop auto-submitting this as your Computer ballot' : 'Auto-submit this as your Computer ballot each week + list in the public gallery'}
+                    >{p.published ? '⏸ Unpublish' : '📡 Publish'}</button>
                     <Link to={`/custom-poll/${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none' }}>View</Link>
                     <ShareButton title={p.name} text={`Check out my custom computer poll "${p.name}" on Poll Position`} url={`${window.location.origin}/custom-poll/${p._id}`} />
                     <button className="btn btn-ghost" onClick={() => deletePoll(p._id)} style={{ fontSize: 11, padding: '4px 10px', color: 'var(--err)' }}>Delete</button>

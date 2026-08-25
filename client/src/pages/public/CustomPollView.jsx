@@ -35,7 +35,10 @@ export default function CustomPollView() {
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Custom Computer Poll</div>
         <h1 style={{ fontSize: 30, fontWeight: 900, marginBottom: 4 }}>{poll.name}</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>by {poll.userName} · {poll.season} season</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+          by {poll.userName} · {poll.season} season
+          {poll.published && <span title="Auto-submits as its owner's Computer ballot each week" style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: 'var(--brand2)', background: 'var(--brand-glow)', padding: '1px 6px', borderRadius: 6 }}>LIVE</span>}
+        </p>
       </div>
 
       <div className="card" style={{ marginTop: 0, marginBottom: 12 }}>
@@ -52,22 +55,33 @@ export default function CustomPollView() {
             </span>
           ))}
         </div>
-        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <Link to={`/custom-poll?remix=${poll._id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}>🔀 Remix</Link>
           <ShareButton title={poll.name} text={`Check out this custom computer poll "${poll.name}" on Poll Position`} />
         </div>
       </div>
 
       <div className="card" style={{ marginTop: 0, padding: 0, overflow: 'hidden' }}>
-        {(poll.rankings || []).map((t, i) => (
-          <div key={t.team} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 16px', borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
-            <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--brand2)', minWidth: 24, textAlign: 'right' }}>{t.rank}</span>
-            <TeamLogo name={t.team} size={26} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{t.team}</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t.record} · {t.conference}</div>
+        {(poll.rankings || []).map((t, i) => {
+          const delta = t.officialRank != null ? t.officialRank - t.rank : null
+          return (
+            <div key={t.team} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 16px', borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
+              <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--brand2)', minWidth: 24, textAlign: 'right' }}>{t.rank}</span>
+              <TeamLogo name={t.team} size={26} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{t.team}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t.record} · {t.conference}</div>
+              </div>
+              {delta != null && delta !== 0 && (
+                <span title={`Official computer model ranks this team #${t.officialRank}`} style={{
+                  fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 6,
+                  color: delta > 0 ? 'var(--ok)' : 'var(--err)',
+                  background: delta > 0 ? 'var(--ok-muted, rgba(46,204,113,0.12))' : 'var(--err-muted)',
+                }}>{delta > 0 ? '▲' : '▼'}{Math.abs(delta)}</span>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       <div style={{ textAlign: 'center', marginTop: 16 }}>

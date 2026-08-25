@@ -16,6 +16,7 @@ import BallotHistory from './pages/public/BallotHistory.jsx'
 import Legal from './pages/public/Legal.jsx'
 import CustomPollBuilder from './pages/public/CustomPollBuilder.jsx'
 import CustomPollView from './pages/public/CustomPollView.jsx'
+import CustomPollGallery from './pages/public/CustomPollGallery.jsx'
 import TeamPage from './pages/public/TeamPage.jsx'
 import Methodology from './pages/public/Methodology.jsx'
 
@@ -140,6 +141,7 @@ export default function App() {
             <Route path="login" element={<Login />} />
             <Route path="legal" element={<Legal />} />
             <Route path="custom-poll" element={<CustomPollBuilder />} />
+            <Route path="custom-poll/gallery" element={<CustomPollGallery />} />
             <Route path="custom-poll/:id" element={<CustomPollView />} />
             <Route path="team/:name" element={<TeamPage />} />
             <Route path="methodology" element={<Methodology />} />
