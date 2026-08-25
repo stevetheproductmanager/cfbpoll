@@ -54,6 +54,36 @@ function GameRow({ g }) {
   )
 }
 
+// Picks the week that should be showing "right now", purely from game dates —
+// self-updating with the browser's clock, no admin action required. Only
+// weeks with a meaningful slate of games are eligible: late in the calendar,
+// FBS play has wrapped up but a handful of D2/D3 playoff games keep trickling
+// in on their own numbering, which would otherwise drag the default forward
+// into a nearly-empty "week" of games nobody cares about.
+function pickDefaultWeek(d) {
+  const counts = new Map()
+  const earliestDate = new Map()
+  for (const g of d.games) {
+    if (g.postseason) continue
+    counts.set(g.week, (counts.get(g.week) || 0) + 1)
+    if (!g.startDate) continue
+    const t = new Date(g.startDate).getTime()
+    if (isNaN(t)) continue
+    if (!earliestDate.has(g.week) || t < earliestDate.get(g.week)) earliestDate.set(g.week, t)
+  }
+  const maxCount = Math.max(0, ...counts.values())
+  const realWeeks = d.weeks.filter(wk => (counts.get(wk) || 0) >= maxCount * 0.3)
+  if (!realWeeks.length) return d.weeks[0]
+
+  const now = Date.now()
+  let best = realWeeks[0]
+  for (const wk of realWeeks) {
+    const t = earliestDate.get(wk)
+    if (t != null && t <= now) best = wk
+  }
+  return best
+}
+
 export default function Schedule() {
   const [data, setData] = useState(null)
   const [week, setWeek] = useState(null)
@@ -64,21 +94,13 @@ export default function Schedule() {
   // so there's no per-click refetch (and no stale-data flash while it loads).
   useEffect(() => {
     setLoading(true)
-    Promise.all([
-      fetch(`/api/schedule/games?season=${SEASON}`).then(r => r.json()),
-      // The site's own "current week" (same one Game Picks/ballots use) —
-      // more meaningful than guessing off raw game dates, which gets thrown
-      // off by small-school games that run later into the calendar than FBS.
-      fetch(`/api/weeks?season=${SEASON}`).then(r => r.json()).catch(() => null),
-    ])
-      .then(([d, weeksInfo]) => {
+    fetch(`/api/schedule/games?season=${SEASON}`)
+      .then(r => r.json())
+      .then(d => {
         if (d.error) { setError(d.error); return }
         setData(d)
         setError('')
-        if (d.weeks?.length) {
-          const currentWeek = weeksInfo?.current?.week
-          setWeek(currentWeek && d.weeks.includes(currentWeek) ? currentWeek : d.weeks[0])
-        }
+        if (d.weeks?.length) setWeek(pickDefaultWeek(d))
       })
       .catch(() => setError('Could not reach server'))
       .finally(() => setLoading(false))
