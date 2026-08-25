@@ -27,6 +27,7 @@ import Heisman from './pages/public/Heisman.jsx'
 import ForYou from './pages/public/ForYou.jsx'
 import TeamPage from './pages/public/TeamPage.jsx'
 import Methodology from './pages/public/Methodology.jsx'
+import Schedule from './pages/public/Schedule.jsx'
 
 // Admin pages
 import DataDownload from './pages/DataDownload.jsx'
@@ -160,6 +161,7 @@ export default function App() {
             <Route path="compare" element={<PublicTeamCompare />} />
             <Route path="reveal" element={<WeeklyReveal />} />
             <Route path="picks" element={<GamePicks />} />
+            <Route path="schedule" element={<Schedule />} />
             <Route path="cfp-projection" element={<CFPProjection />} />
             <Route path="heisman" element={<Heisman />} />
             <Route path="for-you" element={<ForYou />} />

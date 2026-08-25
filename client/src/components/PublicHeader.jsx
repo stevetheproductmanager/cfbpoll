@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { to: '/leaderboard', label: 'Leaderboard' },
   { to: '/custom-poll', label: 'Computer Poll' },
   { to: '/picks', label: 'Game Picks' },
+  { to: '/schedule', label: 'Schedule' },
   { to: '/ballot', label: 'My Ballot', auth: true },
   { to: '/for-you', label: 'For You', auth: true },
   { to: '/admin', label: 'Admin', admin: true },

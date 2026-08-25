@@ -14,6 +14,7 @@ export const ENDPOINTS = [
   // were 'games-spreads'/'games-totals' entries pointing at URLs CFBD doesn't
   // serve — removed since nothing in the app ever read them anyway.)
   { slug: 'games-lines', candidates: ['/lines?year={year}', '/betting/lines?season={year}'] },
+  { slug: 'games-media', candidates: ['/games/media?year={year}&seasonType=both', '/games/media?season={year}&seasonType=both'] },
 
   { slug: 'polls-rankings', candidates: ['/rankings?year={year}', '/rankings?season={year}'] },
   { slug: 'records', candidates: ['/records?year={year}', '/records?season={year}'] },

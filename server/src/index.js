@@ -1955,6 +1955,65 @@ async function loadAllPlayedGames(season) {
   return out;
 }
 
+// ---- Full-season schedule (all weeks, regular + postseason, with TV info) ----
+function mapScheduleGame(g, isPostseason, mediaById) {
+  const home = (g.home || g.homeTeam || g.home_team || g.homeSchool || g.home_school || '').toString().trim();
+  const away = (g.away || g.awayTeam || g.away_team || g.awaySchool || g.away_school || '').toString().trim();
+  if (!home || !away) return null;
+  const hp = g.home_points ?? g.homePoints ?? g.points_home ?? g.home_score ?? null;
+  const ap = g.away_points ?? g.awayPoints ?? g.points_away ?? g.away_score ?? null;
+  const played = hp != null && ap != null && !isNaN(+hp) && !isNaN(+ap);
+  const id = g.id ?? g.gameId ?? g.game_id ?? null;
+  const media = id != null ? mediaById.get(String(id)) : null;
+  return {
+    id,
+    week: g.week ?? g.game_week ?? g.gameWeek ?? 1,
+    postseason: isPostseason,
+    home, away,
+    homeConference: g.home_conference || g.homeConference || null,
+    awayConference: g.away_conference || g.awayConference || null,
+    played,
+    homeScore: played ? +hp : null,
+    awayScore: played ? +ap : null,
+    startDate: g.start_date || g.startDate || g.date || null,
+    tbd: !!(g.start_time_tbd ?? g.startTimeTBD ?? g.startTimeTbd),
+    venue: g.venue || null,
+    neutralSite: !!(g.neutral_site ?? g.neutral ?? g.isNeutral),
+    network: media?.network || media?.outlet || null,
+  };
+}
+
+async function loadFullSchedule(season) {
+  const regular = await readJson(Number(season), 'games-regular') || [];
+  const postseason = await readJson(Number(season), 'games-postseason') || [];
+  const mediaRaw = await readJson(Number(season), 'games-media') || [];
+
+  const mediaById = new Map();
+  for (const m of mediaRaw) {
+    const id = m.id ?? m.gameId ?? m.game_id;
+    if (id != null) mediaById.set(String(id), m);
+  }
+
+  const out = [];
+  for (const g of regular) { const m = mapScheduleGame(g, false, mediaById); if (m) out.push(m); }
+  for (const g of postseason) { const m = mapScheduleGame(g, true, mediaById); if (m) out.push(m); }
+  out.sort((a, b) => new Date(a.startDate || 0) - new Date(b.startDate || 0));
+  return out;
+}
+
+app.get('/api/schedule', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const week = req.query.week ? Number(req.query.week) : null;
+  try {
+    let games = await loadFullSchedule(season);
+    const weeks = [...new Set(games.filter(g => !g.postseason).map(g => g.week))].sort((a, b) => a - b);
+    if (week != null) games = games.filter(g => g.week === week && !g.postseason);
+    res.json({ season, weeks, games });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/picks/games', async (req, res) => {
   const season = Number(req.query.season || 2025);
   try {
