@@ -145,6 +145,16 @@ const ballotWriteLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many ballot changes — please slow down.' },
 });
+// Shared limiter for lighter-weight public write actions — comments, game
+// picks, award votes, custom-poll creation — that don't need the ballot's
+// tighter cap but still shouldn't be scriptable at high volume.
+const writeLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many submissions — please slow down and try again shortly.' },
+});
 
 const {
   CFBD_API_KEY,
@@ -1339,23 +1349,27 @@ async function computeResumes(year) {
   const computer = ranked.slice(0, 25).map(t => t.name);
 
   // AP Top 25 — map CFBD school names to our canonical naming via the team index
-  let ap = [];
-  try {
-    const polls = await readJson(Number(year), 'polls-rankings') || [];
-    const { byName } = buildTeamsIndex(teamsRaw);
-    const regularAP = polls
-      .filter(w => w.seasonType === 'regular')
-      .flatMap(w => (w.polls || []).filter(p => p.poll === 'AP Top 25').map(p => ({ week: w.week, ranks: p.ranks })))
-      .sort((a, b) => b.week - a.week)[0];
-    if (regularAP) {
-      ap = regularAP.ranks
-        .sort((a, b) => a.rank - b.rank)
-        .slice(0, 25)
-        .map(r => byName.get((r.school || '').toLowerCase()) || r.school);
-    }
-  } catch {}
+  const ap = await getFinalAPTop25(year, teamsRaw).catch(() => []);
 
   return { season: Number(year), teams, presets: { computer, ap } };
+}
+
+// The most "final" AP Top 25 available for a season: prefers the postseason
+// (bowl-week) poll if the season has been downloaded through the bowls,
+// otherwise falls back to the last regular-season week's poll.
+async function getFinalAPTop25(year, teamsRaw) {
+  const polls = await readJson(Number(year), 'polls-rankings') || [];
+  const { byName } = buildTeamsIndex(teamsRaw);
+  const apWeeksOf = (seasonType) => polls
+    .filter(w => w.seasonType === seasonType)
+    .flatMap(w => (w.polls || []).filter(p => p.poll === 'AP Top 25').map(p => ({ week: w.week, ranks: p.ranks })))
+    .sort((a, b) => b.week - a.week);
+  const best = apWeeksOf('postseason')[0] || apWeeksOf('regular')[0];
+  if (!best) return [];
+  return best.ranks
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 25)
+    .map(r => byName.get((r.school || '').toLowerCase()) || r.school);
 }
 
 app.get('/api/teams/resumes', async (req, res) => {
@@ -1435,7 +1449,71 @@ app.post('/api/custom-polls/preview', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/custom-polls', requireAuth, async (req, res) => {
+// ---- Backtesting: run a candidate weights/advanced set against a completed
+// season and see how it stacks up against the real final AP Top 25. ----
+
+// Seasons where we have both the underlying game data and a downloaded AP
+// poll to grade against — i.e. seasons a backtest can actually run for.
+app.get('/api/custom-polls/backtest-seasons', async (req, res) => {
+  try {
+    const [gameSeasons, pollSeasons] = await Promise.all([
+      CfbdData.distinct('season', { slug: 'games-regular' }),
+      CfbdData.distinct('season', { slug: 'polls-rankings' }),
+    ]);
+    const pollSet = new Set(pollSeasons);
+    const seasons = gameSeasons.filter(s => pollSet.has(s)).sort((a, b) => b - a);
+    res.json({ seasons });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/custom-polls/backtest', requireAuth, async (req, res) => {
+  const season = Number(req.body.season);
+  const weights = sanitizeWeights(req.body.weights);
+  const advanced = sanitizeAdvanced(req.body.advanced);
+  if (!season) return res.status(400).json({ error: 'Missing season' });
+  if (!weights) return res.status(400).json({ error: 'At least one weight must be greater than 0' });
+  try {
+    const teamsRaw = await readJson(season, 'teams');
+    if (!teamsRaw) return res.status(400).json({ error: `No CFBD data for ${season} — an admin needs to download it first` });
+    const [customRankings, apTop25] = await Promise.all([
+      computeCustomRanking(season, weights, advanced),
+      getFinalAPTop25(season, teamsRaw),
+    ]);
+    if (!apTop25.length) return res.status(400).json({ error: `No AP Top 25 poll downloaded for ${season} — nothing to grade against` });
+
+    const apRankByTeam = new Map(apTop25.map((team, i) => [team, i + 1]));
+    const customRankByTeam = new Map(customRankings.map(t => [t.team, t.rank]));
+    const allTeams = new Set([...apRankByTeam.keys(), ...customRankByTeam.keys()]);
+    const perTeam = [...allTeams].map(team => {
+      const apRank = apRankByTeam.get(team) ?? null;
+      const customRank = customRankByTeam.get(team) ?? null;
+      const diff = apRank != null && customRank != null ? Math.abs(apRank - customRank) : null;
+      return { team, apRank, customRank, diff };
+    }).sort((a, b) => (a.apRank ?? 99) - (b.apRank ?? 99));
+
+    const both = perTeam.filter(t => t.diff != null);
+    const overlap = both.length; // how many teams appear in both Top 25s
+    const exactMatches = both.filter(t => t.diff === 0).length;
+    const avgRankDiff = both.length ? +(both.reduce((a, t) => a + t.diff, 0) / both.length).toFixed(2) : null;
+    // A simple 0-100 "closeness" score: full credit for an exact match, sliding
+    // to zero credit by the time a team is 24 spots off (or absent entirely).
+    const maxPossible = apTop25.length * 24;
+    const totalDiff = apTop25.reduce((sum, team) => {
+      const c = customRankByTeam.get(team);
+      const apRank = apRankByTeam.get(team);
+      return sum + (c != null ? Math.min(24, Math.abs(apRank - c)) : 24);
+    }, 0);
+    const closeness = maxPossible ? Math.round((1 - totalDiff / maxPossible) * 100) : null;
+
+    res.json({ season, apTop25, customTop25: customRankings.slice(0, 25).map(t => t.team), overlap, exactMatches, avgRankDiff, closeness, perTeam });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/custom-polls', writeLimiter, requireAuth, async (req, res) => {
   const season = Number(req.body.season || 2025);
   const name = (req.body.name || '').trim().slice(0, 60);
   const weights = sanitizeWeights(req.body.weights);
@@ -1485,6 +1563,51 @@ app.get('/api/custom-polls/gallery', async (req, res) => {
     .sort({ updatedAt: -1 }).limit(50)
     .select('name userName season weights advanced rankings updatedAt').lean();
   res.json({ polls });
+});
+
+// Custom Poll Accuracy leaderboard: for every published poll, grade its
+// current Top 25 against every completed game this season — a ranked team
+// is "predicted" to beat an unranked one, and the higher-ranked team is
+// predicted to beat the lower-ranked one. Grouped by week so a poll's
+// tuning can be judged week-to-week, same spirit as the human voter board.
+// (Registered before the /:id route below so "leaderboard" doesn't get parsed as an id.)
+app.get('/api/custom-polls/leaderboard', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  try {
+    const [polls, games] = await Promise.all([
+      CustomPoll.find({ published: true, season }).select('name userName weights rankings').lean(),
+      loadAllPlayedGames(season),
+    ]);
+    if (!polls.length) return res.json({ polls: [] });
+
+    const graded = polls.map(poll => {
+      const rankByTeam = new Map((poll.rankings || []).map(t => [t.team, t.rank]));
+      const weekMap = new Map(); // week -> { correct, total }
+      let correct = 0, total = 0;
+      for (const g of games) {
+        const rh = rankByTeam.get(g.home) ?? null;
+        const ra = rankByTeam.get(g.away) ?? null;
+        if (rh == null && ra == null) continue; // no prediction to grade
+        const predictedWinner = rh == null ? g.away : ra == null ? g.home : (rh < ra ? g.home : g.away);
+        const wasCorrect = predictedWinner === g.winner;
+        total++; if (wasCorrect) correct++;
+        const wk = weekMap.get(g.week) || { correct: 0, total: 0 };
+        wk.total++; if (wasCorrect) wk.correct++;
+        weekMap.set(g.week, wk);
+      }
+      const weekDetail = [...weekMap.entries()].sort((a, b) => a[0] - b[0])
+        .map(([week, w]) => ({ week, correct: w.correct, total: w.total, pct: w.total ? +((w.correct / w.total) * 100).toFixed(0) : 0 }));
+      return {
+        pollId: poll._id, name: poll.name, userName: poll.userName || 'Anonymous',
+        correct, total, accuracyPct: total ? +((correct / total) * 100).toFixed(1) : null,
+        weekDetail,
+      };
+    }).filter(p => p.total > 0).sort((a, b) => (b.accuracyPct ?? -1) - (a.accuracyPct ?? -1));
+
+    res.json({ season, polls: graded });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Public — lets a saved poll be viewed/shared without auth.
@@ -1583,7 +1706,7 @@ app.get('/api/comments', async (req, res) => {
   res.json({ comments });
 });
 
-app.post('/api/comments', requireAuth, async (req, res) => {
+app.post('/api/comments', writeLimiter, requireAuth, async (req, res) => {
   const team = (req.body.team || '').toString();
   const text = (req.body.text || '').toString().trim().slice(0, 500);
   if (!team || !text) return res.status(400).json({ error: 'Missing team or text' });
@@ -1629,6 +1752,25 @@ async function loadWeekGames(season, week) {
   return out;
 }
 
+// Every completed game in a season, across all weeks — used to grade a
+// ranking's predictive accuracy (unlike loadWeekGames, not scoped to one week).
+async function loadAllPlayedGames(season) {
+  const gamesRaw = await readJson(Number(season), 'games-regular') || [];
+  const weekKey = (g) => g.week ?? g.game_week ?? g.gameWeek ?? 1;
+  const out = [];
+  for (const g of gamesRaw) {
+    const home = (g.home || g.homeTeam || g.home_team || g.homeSchool || g.home_school || '').toString().trim();
+    const away = (g.away || g.awayTeam || g.away_team || g.awaySchool || g.away_school || '').toString().trim();
+    if (!home || !away) continue;
+    const hp = g.home_points ?? g.homePoints ?? g.points_home ?? g.home_score ?? null;
+    const ap = g.away_points ?? g.awayPoints ?? g.points_away ?? g.away_score ?? null;
+    if (hp == null || ap == null || isNaN(+hp) || isNaN(+ap)) continue; // not played yet
+    if (+hp === +ap) continue; // ties don't happen in CFB but guard anyway
+    out.push({ week: weekKey(g), home, away, winner: +hp > +ap ? home : away, loser: +hp > +ap ? away : home });
+  }
+  return out;
+}
+
 app.get('/api/picks/games', async (req, res) => {
   const season = Number(req.query.season || 2025);
   try {
@@ -1639,7 +1781,7 @@ app.get('/api/picks/games', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/picks', requireAuth, async (req, res) => {
+app.post('/api/picks', writeLimiter, requireAuth, async (req, res) => {
   const season = Number(req.body.season || 2025);
   const week = Number(req.body.week);
   const picks = Array.isArray(req.body.picks) ? req.body.picks : [];
@@ -1782,7 +1924,7 @@ app.get('/api/awards/heisman/candidates', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/awards/heisman/vote', requireAuth, async (req, res) => {
+app.post('/api/awards/heisman/vote', writeLimiter, requireAuth, async (req, res) => {
   const season = Number(req.body.season || 2025);
   const { playerName, team } = req.body;
   if (!playerName) return res.status(400).json({ error: 'Missing playerName' });

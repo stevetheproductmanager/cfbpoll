@@ -38,6 +38,30 @@ const ADVANCED_KNOBS = [
   { key: 'badLossPenalty', label: 'Bad-Loss Penalty', color: 'var(--accent)', desc: 'How harshly a loss to a weak (or FCS) opponent gets punished.', lo: 'Forgiving', hi: 'Harsh' },
 ]
 
+const ADV_TIP_KEY = 'pollposition_advtuning_tip_seen'
+
+// A short one-time walkthrough for the Advanced Tuning panel — 6 sliders plus
+// a formula panel is a lot to land on cold, so explain the contract up front:
+// every knob starts at the official setting, so nothing breaks by opening it.
+function AdvancedTuningTip({ onDismiss }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 10, background: 'var(--brand-glow)',
+      border: '1px solid var(--border-accent)', borderRadius: 10, padding: '10px 12px', marginBottom: 12,
+    }}>
+      <span style={{ fontSize: 18, flexShrink: 0 }}>💡</span>
+      <div style={{ flex: 1 }}>
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          <strong>What these do:</strong> the 6 metrics above decide <em>what</em> matters; these knobs tune <em>how</em> each one is calculated —
+          e.g. how much a blowout margin counts, or how harshly a bad loss is punished. Every slider starts at the site's official setting,
+          so leaving this closed changes nothing. Click a team in your results and open "the math" to see exactly how a knob move changed its score.
+        </p>
+      </div>
+      <button onClick={onDismiss} className="btn btn-ghost" style={{ fontSize: 11, padding: '3px 8px', flexShrink: 0, alignSelf: 'start' }}>Got it</button>
+    </div>
+  )
+}
+
 function Slider({ metric, value, onChange, pct }) {
   return (
     <div style={{ marginBottom: 18 }}>
@@ -94,6 +118,10 @@ export default function CustomPollBuilder() {
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS)
   const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [advTipSeen, setAdvTipSeen] = useState(() => {
+    try { return localStorage.getItem(ADV_TIP_KEY) === '1' } catch { return false }
+  })
+  const dismissAdvTip = () => { try { localStorage.setItem(ADV_TIP_KEY, '1') } catch {}; setAdvTipSeen(true) }
   const [result, setResult] = useState(null)
   const [prevResult, setPrevResult] = useState(null) // previous Compute run, for "vs your last preview" diffs
   const [loading, setLoading] = useState(false)
@@ -103,12 +131,43 @@ export default function CustomPollBuilder() {
   const [expanded, setExpanded] = useState(null) // team name whose breakdown is open
   const [publishing, setPublishing] = useState(null) // poll id currently toggling
 
+  // Backtesting — grade the current weights/advanced against a completed
+  // season's real final AP Top 25.
+  const [showBacktest, setShowBacktest] = useState(false)
+  const [backtestSeasons, setBacktestSeasons] = useState([])
+  const [backtestSeason, setBacktestSeason] = useState('')
+  const [backtestResult, setBacktestResult] = useState(null)
+  const [backtestLoading, setBacktestLoading] = useState(false)
+
   const loadMine = useCallback(() => {
     if (!user) return
     fetch('/api/custom-polls/mine', { headers: authHeaders() }).then(r => r.json()).then(d => setMine(d.polls || [])).catch(() => {})
   }, [user, authHeaders])
 
   useEffect(() => { loadMine() }, [loadMine])
+
+  useEffect(() => {
+    fetch('/api/custom-polls/backtest-seasons').then(r => r.json()).then(d => {
+      const seasons = d.seasons || []
+      setBacktestSeasons(seasons)
+      if (seasons.length) setBacktestSeason(String(seasons[0]))
+    }).catch(() => {})
+  }, [])
+
+  const runBacktest = async () => {
+    if (!backtestSeason) { toast.error('No backtestable season available — an admin needs to download a season with games + AP polls'); return }
+    setBacktestLoading(true)
+    try {
+      const r = await fetch('/api/custom-polls/backtest', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ season: Number(backtestSeason), weights, advanced }),
+      })
+      const d = await r.json()
+      if (!r.ok) { toast.error(d.error || 'Could not run backtest'); setBacktestLoading(false); return }
+      setBacktestResult(d)
+    } catch { toast.error('Could not reach server') }
+    setBacktestLoading(false)
+  }
 
   // Remix support: /custom-poll?remix=<id> preloads that poll's weights (and
   // a "Remix of ..." name) so a user can clone and tweak someone else's poll.
@@ -244,6 +303,7 @@ export default function CustomPollBuilder() {
         <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 4 }}>
           <Link to="/custom-poll/gallery" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>🖼️ Browse the public gallery →</Link>
           <Link to="/custom-poll/diff" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>⇄ Compare two polls →</Link>
+          <Link to="/custom-poll/leaderboard" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>🏆 Accuracy leaderboard →</Link>
         </div>
       </div>
 
@@ -274,11 +334,61 @@ export default function CustomPollBuilder() {
             </button>
             {showAdvanced && (
               <div style={{ marginTop: 12 }}>
+                {!advTipSeen && <AdvancedTuningTip onDismiss={dismissAdvTip} />}
                 <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>Fine-tune the mechanics behind each metric above. Every knob starts at the site's official setting.</p>
                 {ADVANCED_KNOBS.map(k => (
                   <AdvancedSlider key={k.key} knob={k} value={advanced[k.key]} onChange={setAdvancedKnob} />
                 ))}
                 <button className="btn btn-ghost" onClick={resetAdvanced} disabled={isAdvancedDefault} style={{ fontSize: 11 }}>Reset to official settings</button>
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 10 }}>
+            <button
+              onClick={() => setShowBacktest(s => !s)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)' }}
+            >
+              {showBacktest ? '▾' : '▸'} 📊 Backtest vs. Real AP Poll
+            </button>
+            {showBacktest && (
+              <div style={{ marginTop: 10 }}>
+                <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+                  Run your current weights against a completed season and see how close your Top 25 landed to the real final AP poll.
+                </p>
+                {backtestSeasons.length === 0 ? (
+                  <p style={{ fontSize: 11, color: 'var(--muted)' }}>No backtestable seasons yet — an admin needs to download a season's games + AP polls (Admin → Data Download).</p>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <select className="input" style={{ flex: 1 }} value={backtestSeason} onChange={e => setBacktestSeason(e.target.value)}>
+                        {backtestSeasons.map(s => <option key={s} value={s}>{s} season</option>)}
+                      </select>
+                      <button className="btn btn-primary" onClick={runBacktest} disabled={backtestLoading} style={{ fontSize: 12, padding: '4px 12px' }}>
+                        {backtestLoading ? 'Running…' : 'Run'}
+                      </button>
+                    </div>
+                    {backtestResult && backtestResult.season === Number(backtestSeason) && (
+                      <div style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+                        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
+                          <div><div style={{ fontSize: 20, fontWeight: 800, color: 'var(--brand2)' }}>{backtestResult.closeness}%</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>closeness score</div></div>
+                          <div><div style={{ fontSize: 20, fontWeight: 800 }}>{backtestResult.exactMatches}</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>exact rank matches</div></div>
+                          <div><div style={{ fontSize: 20, fontWeight: 800 }}>{backtestResult.overlap}/25</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>teams in both Top 25s</div></div>
+                          <div><div style={{ fontSize: 20, fontWeight: 800 }}>{backtestResult.avgRankDiff ?? '—'}</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>avg rank gap</div></div>
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 4 }}>Biggest disagreements</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {[...backtestResult.perTeam].filter(t => t.diff != null).sort((a, b) => b.diff - a.diff).slice(0, 5).map(t => (
+                            <div key={t.team} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                              <span>{t.team}</span>
+                              <span style={{ color: 'var(--muted)' }}>AP #{t.apRank} · You #{t.customRank} ({t.diff > 0 ? '±' : ''}{t.diff})</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
