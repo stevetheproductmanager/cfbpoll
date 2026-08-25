@@ -98,7 +98,7 @@ export default function WeekManagement() {
       })
       const data = await r.json()
       if (!r.ok) { toast.error(data.error || 'Failed to seed calendar'); return }
-      toast.success(`Created ${data.created} week${data.created !== 1 ? 's' : ''}${data.skipped ? ` (${data.skipped} already existed)` : ''}`)
+      toast.success(`Created ${data.created} week${data.created !== 1 ? 's' : ''}${data.updated ? `, refreshed dates on ${data.updated} existing` : ''}`)
       fetchWeeks()
     } catch { toast.error('Could not reach server') }
     finally { setSeedingCalendar(false) }
@@ -191,12 +191,12 @@ export default function WeekManagement() {
         <h3 style={{ marginBottom: 8 }}>Seed NCAA Season Calendar</h3>
         <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
           One-click fill of Weeks 1–15, Conference Championships, Bowl Season, and CFP rounds through the National Championship.
-          Each week runs Tuesday through Sunday, with the vote deadline set to the following Monday at 5pm PT (so a Monday game still counts). Skips any week number that already exists.
+          Each week runs Tuesday through Sunday, with the vote deadline set to 48 hours after the end date (so a Monday game still counts). Refreshes dates on weeks that already exist too — only the open/closed state and custom labels are left alone.
         </p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="datetime-local" className="input" style={{ width: 220, fontSize: 13 }}
+          <input type="date" className="input" style={{ width: 160, fontSize: 13 }}
             value={calendarStart} onChange={e => setCalendarStart(e.target.value)}
-            title="Week 1 deadline — later weeks are spaced 7 days apart from here" />
+            title="Week 1 start date (Tuesday) — later weeks are spaced 7 days apart from here" />
           <button className="btn btn-primary" onClick={seedCalendar} disabled={seedingCalendar} style={{ fontSize: 13 }}>
             {seedingCalendar ? 'Seeding...' : 'Seed Calendar'}
           </button>

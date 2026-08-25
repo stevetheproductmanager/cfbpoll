@@ -313,16 +313,26 @@ function nextMonday5pmPST(fromDate) {
   return d;
 }
 
-// Derives a week's start/end dates from its voting deadline: games count toward
-// a week from Tuesday through Sunday by default. The deadline itself stays the
-// following Monday at 5pm PT, so a Monday game (MACtion, etc.) is still captured
-// by voting even though the nominal "week" ends Sunday; a game on Tue/Wed/Thu
-// falls after that Sunday cutoff and belongs to the next week instead.
-function weekBoundsFromDeadline(deadline) {
-  const d = new Date(deadline);
-  const endDate = new Date(d.getTime() - 86400000);      // Sunday before the Monday deadline
-  const startDate = new Date(d.getTime() - 6 * 86400000); // Tuesday before that
-  return { startDate, endDate };
+// Anchor for a week's start: the Tuesday of the current calendar week (or
+// today, if today is Tuesday). Games count toward a week starting Tuesday.
+function currentWeekTuesday(fromDate) {
+  const d = fromDate ? new Date(fromDate) : new Date();
+  const day = d.getUTCDay(); // 0=Sun..6=Sat
+  const diff = (day - 2 + 7) % 7; // days since Tuesday
+  d.setUTCDate(d.getUTCDate() - diff);
+  d.setUTCHours(12, 0, 0, 0); // noon UTC avoids local-midnight/DST edge cases
+  return d;
+}
+
+// A week runs Tuesday (start) through Sunday (end date, 5 days later); voting
+// closes 48 hours after the end date so a Monday game is still captured
+// before ballots lock, while a Tue/Wed/Thu game falls after that Sunday
+// cutoff and belongs to the following week instead.
+function weekDatesFromStart(startDate) {
+  const sd = new Date(startDate);
+  const endDate = new Date(sd.getTime() + 5 * 86400000);
+  const deadline = new Date(endDate.getTime() + 48 * 3600000);
+  return { endDate, deadline };
 }
 
 // Admin's isOpen flag is authoritative; a deadline only auto-closes a week
@@ -353,9 +363,9 @@ async function getCurrentWeekInfo(season = 2025) {
 async function ensureWeekExists(season = 2025) {
   const exists = await Week.findOne({ season }).lean();
   if (!exists) {
-    const deadline = nextMonday5pmPST();
-    const { startDate, endDate } = weekBoundsFromDeadline(deadline);
-    await Week.create({ season, week: 1, label: 'Week 1', deadline, startDate, endDate, isOpen: true });
+    const startDate = currentWeekTuesday();
+    const { endDate, deadline } = weekDatesFromStart(startDate);
+    await Week.create({ season, week: 1, label: 'Week 1', startDate, endDate, deadline, isOpen: true });
   }
 }
 
@@ -425,9 +435,13 @@ app.post('/api/weeks/advance', requireAdmin, async (req, res) => {
   const season = Number(req.body.season || 2025);
   const current = await Week.findOne({ season }).sort({ week: -1 });
   const newWeek = (current?.week || 0) + 1;
-  const deadline = req.body.deadline ? new Date(req.body.deadline) : nextMonday5pmPST();
-  const { startDate, endDate } = weekBoundsFromDeadline(deadline);
-  await Week.create({ season, week: newWeek, label: `Week ${newWeek}`, deadline, startDate, endDate, isOpen: true });
+  // Continue chronologically from the previous week's end date when we have
+  // one; otherwise anchor to this calendar week's Tuesday.
+  const startDate = current?.endDate ? new Date(new Date(current.endDate).getTime() + 86400000) : currentWeekTuesday();
+  const computed = weekDatesFromStart(startDate);
+  const endDate = computed.endDate;
+  const deadline = req.body.deadline ? new Date(req.body.deadline) : computed.deadline;
+  await Week.create({ season, week: newWeek, label: `Week ${newWeek}`, startDate, endDate, deadline, isOpen: true });
   await closeOtherWeeks(season, newWeek);
   res.json({ ok: true, previousWeek: current?.week, newWeek, deadline });
 });
@@ -437,17 +451,21 @@ app.post('/api/weeks/update', requireAdmin, async (req, res) => {
   const { week, deadline, startDate, endDate, open, label, season = 2025 } = req.body;
   const wk = await Week.findOne({ season, week });
   if (!wk) return res.status(404).json({ error: 'Week not found' });
-  if (deadline) wk.deadline = new Date(deadline);
   if (startDate) wk.startDate = new Date(startDate);
   if (endDate) wk.endDate = new Date(endDate);
+  if (deadline) wk.deadline = new Date(deadline);
+  // Keep the deadline consistent with the end date: if the end date changed
+  // and the caller didn't also supply an explicit deadline in this request,
+  // recompute it as 48 hours after the new end date.
+  else if (endDate) wk.deadline = new Date(wk.endDate.getTime() + 48 * 3600000);
   if (label !== undefined) wk.label = label;
   if (open !== undefined) {
     wk.isOpen = open;
     // Reopening a week whose deadline already passed needs a fresh deadline,
     // or computeIsOpen() would just report it closed again immediately.
-    // Only auto-extend if the caller didn't also supply a new deadline.
-    if (open && !deadline && wk.deadline && new Date() >= new Date(wk.deadline)) {
-      wk.deadline = nextMonday5pmPST();
+    // Only auto-extend if the caller didn't also supply a new deadline/end date.
+    if (open && !deadline && !endDate && wk.deadline && new Date() >= new Date(wk.deadline)) {
+      wk.deadline = wk.endDate ? new Date(wk.endDate.getTime() + 48 * 3600000) : nextMonday5pmPST();
     }
   }
   await wk.save();
@@ -462,13 +480,13 @@ app.post('/api/weeks/create', requireAdmin, async (req, res) => {
   if (!week || !Number.isFinite(Number(week))) return res.status(400).json({ error: 'Missing/invalid week number' });
   const exists = await Week.findOne({ season, week });
   if (exists) return res.status(409).json({ error: `Week ${week} already exists for ${season}` });
-  const finalDeadline = deadline ? new Date(deadline) : nextMonday5pmPST();
-  const bounds = weekBoundsFromDeadline(finalDeadline);
+  const finalStart = startDate ? new Date(startDate) : currentWeekTuesday();
+  const computed = weekDatesFromStart(finalStart);
+  const finalEnd = endDate ? new Date(endDate) : computed.endDate;
+  const finalDeadline = deadline ? new Date(deadline) : (endDate ? new Date(finalEnd.getTime() + 48 * 3600000) : computed.deadline);
   const wk = await Week.create({
     season, week: Number(week), label: label || undefined,
-    deadline: finalDeadline,
-    startDate: startDate ? new Date(startDate) : bounds.startDate,
-    endDate: endDate ? new Date(endDate) : bounds.endDate,
+    startDate: finalStart, endDate: finalEnd, deadline: finalDeadline,
     isOpen,
   });
   if (isOpen) await closeOtherWeeks(season, Number(week));
@@ -476,7 +494,8 @@ app.post('/api/weeks/create', requireAdmin, async (req, res) => {
 });
 
 // The standard modern CFB calendar: 15 regular-season weeks + postseason.
-// Only fills in gaps — never touches a week number that already exists.
+// The full season: 15 regular-season weeks + postseason. Week numbers are
+// consecutive/sequential 1-20, matching their array index + 1.
 const NCAA_CALENDAR = [
   ...Array.from({ length: 15 }, (_, i) => ({ week: i + 1, label: `Week ${i + 1}` })),
   { week: 16, label: 'Conference Championships' },
@@ -486,26 +505,35 @@ const NCAA_CALENDAR = [
   { week: 20, label: 'National Championship' },
 ];
 
-// POST /api/weeks/seed-calendar — bulk-create the standard season calendar.
-// startDate anchors Week 1's deadline; each following slot is +7 days.
+// POST /api/weeks/seed-calendar — populate the full season, Weeks 1–20.
+// Always (re)computes startDate/endDate/deadline for every week in the
+// calendar, including ones that already exist, so a week created earlier
+// with no dates (or arbitrary ones) gets fixed rather than skipped. Each
+// week runs Tuesday (start) through Sunday (end, +5 days); the deadline is
+// 48 hours after the end date. isOpen and label are only set on first
+// insert — existing admin state (which week is open, custom labels) is left
+// alone.
 app.post('/api/weeks/seed-calendar', requireAdmin, async (req, res) => {
   const { season = 2025, startDate } = req.body;
-  const anchor = startDate ? new Date(startDate) : nextMonday5pmPST();
+  const anchor = startDate ? new Date(startDate) : currentWeekTuesday();
   const existing = new Set((await Week.find({ season }, 'week').lean()).map(w => w.week));
-  // Seeded weeks all start closed — the admin picks which one is active via
-  // the Week Management toggle (which enforces a single open week). Defaulting
-  // any of these to open risked fighting with an already-open week elsewhere
-  // in the calendar (or a stray leftover test week) over which one "current"
-  // voting resolves to.
-  const toCreate = NCAA_CALENDAR
-    .filter(w => !existing.has(w.week))
-    .map(w => {
-      const deadline = new Date(anchor.getTime() + (w.week - 1) * 7 * 86400000);
-      const { startDate, endDate } = weekBoundsFromDeadline(deadline);
-      return { season, week: w.week, label: w.label, deadline, startDate, endDate, isOpen: false };
-    });
-  if (toCreate.length) await Week.insertMany(toCreate);
-  res.json({ ok: true, created: toCreate.length, skipped: NCAA_CALENDAR.length - toCreate.length });
+  const ops = NCAA_CALENDAR.map(w => {
+    const wkStart = new Date(anchor.getTime() + (w.week - 1) * 7 * 86400000);
+    const { endDate, deadline } = weekDatesFromStart(wkStart);
+    return {
+      updateOne: {
+        filter: { season, week: w.week },
+        update: {
+          $set: { startDate: wkStart, endDate, deadline },
+          $setOnInsert: { season, week: w.week, label: w.label, isOpen: false },
+        },
+        upsert: true,
+      },
+    };
+  });
+  await Week.bulkWrite(ops);
+  const created = NCAA_CALENDAR.filter(w => !existing.has(w.week)).length;
+  res.json({ ok: true, created, updated: NCAA_CALENDAR.length - created });
 });
 
 // GET /api/ballots
