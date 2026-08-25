@@ -26,15 +26,21 @@ export default function Leaderboard() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [expandedVoter, setExpandedVoter] = useState(null)
+  const [leaderboardPublic, setLeaderboardPublic] = useState(true)
 
   useEffect(() => {
     fetch('/api/ballots/leaderboard').then(r => r.json()).then(d => { setData(d); setLoading(false) }).catch(() => setLoading(false))
+    fetch('/api/settings').then(r => r.json()).then(d => setLeaderboardPublic(d.leaderboardPublic !== false)).catch(() => {})
   }, [])
 
   const maxScore = useMemo(() => data?.voters?.[0]?.score || 1, [data])
   const maxAlignment = useMemo(() => Math.max(...(data?.voters || []).map(v => v.avgAlignment), 1), [data])
 
   if (loading) return <div style={{ textAlign: 'center', padding: 80, color: 'var(--muted)' }}>Loading leaderboard...</div>
+
+  if (!leaderboardPublic && !user) {
+    return <div style={{ textAlign: 'center', padding: 80, color: 'var(--muted)' }}>The leaderboard is currently hidden. Sign in to view it.</div>
+  }
 
   if (!data?.voters?.length) {
     return (

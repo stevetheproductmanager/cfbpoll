@@ -12,16 +12,41 @@ export default function WeekManagement() {
   const [seedingCalendar, setSeedingCalendar] = useState(false)
   const [newWeek, setNewWeek] = useState({ week: '', label: '', startDate: '', endDate: '', deadline: '' })
   const [creatingWeek, setCreatingWeek] = useState(false)
+  const [current, setCurrent] = useState(null)
+  const [incomplete, setIncomplete] = useState(null)
+  const [nudgingId, setNudgingId] = useState(null)
 
   const fetchWeeks = useCallback(() => {
     fetch('/api/weeks', { headers: authHeaders() })
       .then(r => r.json())
-      .then(d => setWeeks(d.weeks || []))
+      .then(d => { setWeeks(d.weeks || []); setCurrent(d.current || null) })
       .catch(() => toast.error('Failed to load weeks'))
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { fetchWeeks() }, [fetchWeeks])
+
+  useEffect(() => {
+    if (!current?.isOpen) { setIncomplete(null); return }
+    fetch(`/api/weeks/${current.week}/incomplete-voters`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then(d => setIncomplete(d))
+      .catch(() => {})
+  }, [current?.week, current?.isOpen])
+
+  const nudgeVoter = async (voter) => {
+    setNudgingId(voter.id)
+    try {
+      const r = await fetch('/api/email/remind-voter', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ userId: voter.id, week: current.week }),
+      })
+      const data = await r.json()
+      if (!data.ok) { toast.error(data.error || 'Failed to send reminder'); return }
+      toast.success(data.method === 'smtp' ? `Reminder sent to ${voter.name}` : `Reminder logged for ${voter.name} (no SMTP provider)`)
+    } catch { toast.error('Could not reach server') }
+    finally { setNudgingId(null) }
+  }
 
   const advanceWeek = async () => {
     try {
@@ -40,6 +65,7 @@ export default function WeekManagement() {
   }
 
   const toggleWeek = async (week, currentlyOpen) => {
+    if (!currentlyOpen && !window.confirm(`Open Week ${week}? This automatically closes every other week — only one week can be open for voting at a time.`)) return
     try {
       const r = await fetch('/api/weeks/update', {
         method: 'POST',
@@ -177,6 +203,30 @@ export default function WeekManagement() {
           </tbody>
         </table>
       </div>
+
+      {current?.isOpen && incomplete && (
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 }}>
+          <h3 style={{ marginBottom: 8 }}>Ballot Completion — Week {current.week}</h3>
+          <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+            {incomplete.submitted}/{incomplete.total} registered voters have submitted a ballot this week.
+          </p>
+          {incomplete.missing.length === 0 ? (
+            <p style={{ fontSize: 13, color: 'var(--ok)' }}>Everyone's voted. 🎉</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+              {incomplete.missing.map(v => (
+                <div key={v.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', fontSize: 13 }}>
+                  <span>{v.name}{!v.email && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>(no email)</span>}</span>
+                  <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }}
+                    onClick={() => nudgeVoter(v)} disabled={!v.email || nudgingId === v.id}>
+                    {nudgingId === v.id ? 'Sending...' : 'Nudge'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 }}>
         <h3 style={{ marginBottom: 8 }}>Advance to Next Week</h3>

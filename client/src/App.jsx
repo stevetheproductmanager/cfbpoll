@@ -32,6 +32,7 @@ import EmailNotifications from './pages/EmailNotifications.jsx'
 import AdminUsers from './pages/AdminUsers.jsx'
 import AdminBallots from './pages/AdminBallots.jsx'
 import AdminSettings from './pages/AdminSettings.jsx'
+import AdminAuditLog from './pages/AdminAuditLog.jsx'
 import AdminHeader from './components/AdminHeader.jsx'
 
 /* ==============================
@@ -52,7 +53,7 @@ function DataGate() {
 }
 
 // These subtabs manage the site itself and don't need CFBD season data loaded.
-const NO_DATA_GATE_TABS = ['weekmgmt', 'mockvoters', 'scheduleddownload', 'emailnotifications', 'users', 'ballotmod', 'sitesettings', 'data']
+const NO_DATA_GATE_TABS = ['weekmgmt', 'mockvoters', 'scheduleddownload', 'emailnotifications', 'users', 'ballotmod', 'sitesettings', 'data', 'auditlog']
 
 function AdminContent() {
   const { hasData, loading } = useRankings()
@@ -82,6 +83,7 @@ function AdminContent() {
       case 'ballotmod': return <AdminBallots />
       case 'sitesettings': return <AdminSettings />
       case 'data': return <DataDownload />
+      case 'auditlog': return <AdminAuditLog />
       default: return <Rankings />
     }
   }

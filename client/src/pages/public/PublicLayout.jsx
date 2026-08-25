@@ -19,14 +19,33 @@ function AnnouncementBanner() {
   )
 }
 
+function MaintenanceNotice({ message }) {
+  return (
+    <div style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24, gap: 12 }}>
+      <div style={{ fontSize: 48 }}>🏈</div>
+      <h2 style={{ margin: 0 }}>Down for Maintenance</h2>
+      <p style={{ color: 'var(--text-secondary)', maxWidth: 420 }}>{message || "We're making some updates. Please check back shortly."}</p>
+    </div>
+  )
+}
+
 export default function PublicLayout() {
+  const [settings, setSettings] = useState(null)
+  useEffect(() => {
+    fetch('/api/settings').then(r => r.json()).then(setSettings).catch(() => setSettings({}))
+  }, [])
+
   return (
     <>
       <PublicHeader />
       <AnnouncementBanner />
-      <LogoProvider>
-        <Outlet />
-      </LogoProvider>
+      {settings?.maintenanceMode ? (
+        <MaintenanceNotice message={settings.maintenanceMessage} />
+      ) : (
+        <LogoProvider>
+          <Outlet />
+        </LogoProvider>
+      )}
       <footer style={{ textAlign: 'center', padding: '20px 16px 32px', fontSize: 12, color: 'var(--muted)' }}>
         <Link to="/legal" style={{ color: 'var(--muted)' }}>Terms &amp; Privacy</Link>
       </footer>

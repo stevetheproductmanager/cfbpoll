@@ -72,6 +72,16 @@ export default function ScheduledDownload() {
         Automatically pull teams, games, and ratings from CFBD on a weekly schedule. Data is stored in MongoDB and weekly rankings are recomputed after each download.
       </p>
 
+      {(() => {
+        const last = schedLog[schedLog.length - 1]
+        if (!last || !/fail|error/i.test(last.message)) return null
+        return (
+          <div style={{ background: 'var(--err-muted, rgba(248,113,113,0.1))', border: '1px solid var(--err)', color: 'var(--err)', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 16 }}>
+            ⚠ Last run failed: {last.message}
+          </div>
+        )
+      })()}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
         <div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

@@ -58,6 +58,27 @@ export default function AdminSettings() {
           <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>Shown at the top of every public page. Leave blank to hide it.</p>
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input type="checkbox" id="leaderboardPublic" checked={form.leaderboardPublic}
+            onChange={e => setForm(f => ({ ...f, leaderboardPublic: e.target.checked }))} />
+          <label htmlFor="leaderboardPublic" style={{ fontSize: 13, fontWeight: 600 }}>Public leaderboard visible</label>
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: -10 }}>When off, the leaderboard page shows a "hidden by admin" notice to signed-out visitors.</p>
+
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <input type="checkbox" id="maintMode" checked={form.maintenanceMode}
+              onChange={e => setForm(f => ({ ...f, maintenanceMode: e.target.checked }))} />
+            <label htmlFor="maintMode" style={{ fontSize: 13, fontWeight: 600, color: form.maintenanceMode ? 'var(--err)' : undefined }}>Maintenance mode</label>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 8px' }}>Replaces the entire public site with a maintenance notice. The admin panel stays accessible.</p>
+          <textarea className="input" rows={2} maxLength={300} value={form.maintenanceMessage}
+            onChange={e => setForm(f => ({ ...f, maintenanceMessage: e.target.value }))}
+            placeholder="e.g. We're updating the poll — back shortly!"
+            disabled={!form.maintenanceMode}
+            style={{ width: '100%', fontSize: 13, resize: 'vertical', opacity: form.maintenanceMode ? 1 : 0.5 }} />
+        </div>
+
         <button className="btn btn-primary" onClick={save} disabled={saving} style={{ fontSize: 13, alignSelf: 'start' }}>
           {saving ? 'Saving...' : 'Save Settings'}
         </button>

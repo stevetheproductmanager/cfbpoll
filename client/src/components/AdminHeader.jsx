@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../store/AuthContext.jsx'
 import { useRankings } from '../store/RankingsContext.jsx'
@@ -50,9 +50,49 @@ const ADMIN_NAV = [
       { key: 'ballotmod', label: 'Ballots' },
       { key: 'sitesettings', label: 'Settings' },
       { key: 'data', label: 'Data' },
+      { key: 'auditlog', label: 'Audit Log' },
     ],
   },
 ]
+
+function WeekStatusBanner() {
+  const [info, setInfo] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      fetch('/api/weeks').then(r => r.json()).then(d => {
+        if (cancelled) return
+        const wk = (d.weeks || []).find(w => w.week === d.current?.week)
+        setInfo({ ...d.current, ballotCount: wk?.ballotCount ?? 0, voterCount: d.voterCount ?? 0 })
+      }).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 60000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+
+  if (!info) return null
+
+  const hoursLeft = info.deadline ? (new Date(info.deadline).getTime() - Date.now()) / 3600000 : null
+  const closesText = hoursLeft == null ? null : hoursLeft <= 0 ? 'deadline passed' :
+    hoursLeft < 48 ? `closes in ${Math.round(hoursLeft)}h` :
+    `closes ${new Date(info.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, fontWeight: 600, padding: '4px 12px',
+      borderRadius: 99, background: info.isOpen ? 'var(--ok-muted, rgba(74,222,128,0.12))' : 'var(--panel-2)',
+      border: `1px solid ${info.isOpen ? 'var(--ok)' : 'var(--border)'}`, color: info.isOpen ? 'var(--ok)' : 'var(--muted)',
+      whiteSpace: 'nowrap',
+    }}>
+      <span style={{ width: 7, height: 7, borderRadius: 99, background: info.isOpen ? 'var(--ok)' : 'var(--muted)' }} />
+      Week {info.week} · {info.isOpen ? 'Open' : 'Closed'}
+      {closesText && <span style={{ opacity: 0.8, fontWeight: 500 }}>· {closesText}</span>}
+      <span style={{ opacity: 0.8, fontWeight: 500 }}>· {info.ballotCount}/{info.voterCount} ballots</span>
+    </div>
+  )
+}
 
 export default function AdminHeader({ group, subTab, onTabClick }) {
   const { hasData } = useRankings()
@@ -67,7 +107,8 @@ export default function AdminHeader({ group, subTab, onTabClick }) {
             <span style={{ fontSize: 22 }}>🏈</span>
             <span>Poll Position <span className="brand-accent">Admin</span></span>
           </div>
-          <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center' }}>
+          <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <WeekStatusBanner />
             {hasData && <YearPicker />}
             <ThemeToggle />
             <Link to="/" className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}>

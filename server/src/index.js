@@ -24,10 +24,19 @@ import Week from './models/Week.js';
 import Ballot from './models/Ballot.js';
 import CfbdData from './models/CfbdData.js';
 import User from './models/User.js';
+import AdminAction from './models/AdminAction.js';
 import cron from 'node-cron';
 import { sendEmail, getEmailLog, deadlineReminderEmail, weeklyRecapEmail } from './email.js';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+
+// Fire-and-forget audit log entry. Never throws — a logging failure should
+// never break the admin action it's describing.
+async function logAction(req, action, details = '') {
+  try {
+    await AdminAction.create({ adminId: req.user?.id || 'unknown', adminName: req.user?.name || 'Unknown', action, details });
+  } catch (e) { console.error('[audit] failed to log action:', e.message); }
+}
 
 const app = express();
 // Heroku (and most PaaS) sit behind a reverse proxy — trust its X-Forwarded-For
@@ -419,7 +428,23 @@ app.get('/api/weeks', async (req, res) => {
     };
   }));
 
-  res.json({ current: info, weeks: weekData, maxWeek: info.week });
+  const voterCount = await User.countDocuments({ banned: { $ne: true } });
+  res.json({ current: info, weeks: weekData, maxWeek: info.week, voterCount });
+});
+
+// GET /api/weeks/:week/incomplete-voters — registered voters who have not
+// submitted a ballot for this week yet. Powers the ballot-completion panel.
+app.get('/api/weeks/:week/incomplete-voters', requireAdmin, async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const week = Number(req.params.week);
+  const [users, votedIds] = await Promise.all([
+    User.find({ banned: { $ne: true } }).lean(),
+    Ballot.distinct('userId', { season, week }),
+  ]);
+  const voted = new Set(votedIds.map(String));
+  const missing = users.filter(u => !voted.has(String(u._id)))
+    .map(u => ({ id: u._id.toString(), name: u.name, email: u.email || null }));
+  res.json({ week, season, total: users.length, submitted: users.length - missing.length, missing });
 });
 
 // Only one week per season should ever be the "active" voting week. Without
@@ -443,6 +468,7 @@ app.post('/api/weeks/advance', requireAdmin, async (req, res) => {
   const deadline = req.body.deadline ? new Date(req.body.deadline) : computed.deadline;
   await Week.create({ season, week: newWeek, label: `Week ${newWeek}`, startDate, endDate, deadline, isOpen: true });
   await closeOtherWeeks(season, newWeek);
+  await logAction(req, 'week.advance', `Closed Week ${current?.week ?? '—'}, opened Week ${newWeek}`);
   res.json({ ok: true, previousWeek: current?.week, newWeek, deadline });
 });
 
@@ -471,6 +497,8 @@ app.post('/api/weeks/update', requireAdmin, async (req, res) => {
   await wk.save();
   // Opening this week means it — and only it — is the active voting week.
   if (open) await closeOtherWeeks(season, week);
+  if (open !== undefined) await logAction(req, open ? 'week.open' : 'week.close', `Week ${week}`);
+  else await logAction(req, 'week.edit', `Week ${week}: ${Object.keys(req.body).filter(k => !['week', 'season'].includes(k)).join(', ')}`);
   res.json({ ok: true, week: wk });
 });
 
@@ -490,6 +518,7 @@ app.post('/api/weeks/create', requireAdmin, async (req, res) => {
     isOpen,
   });
   if (isOpen) await closeOtherWeeks(season, Number(week));
+  await logAction(req, 'week.create', `Week ${week}${label ? ` (${label})` : ''}`);
   res.json({ ok: true, week: wk });
 });
 
@@ -533,6 +562,7 @@ app.post('/api/weeks/seed-calendar', requireAdmin, async (req, res) => {
   });
   await Week.bulkWrite(ops);
   const created = NCAA_CALENDAR.filter(w => !existing.has(w.week)).length;
+  await logAction(req, 'week.seed-calendar', `Created ${created}, refreshed ${NCAA_CALENDAR.length - created}`);
   res.json({ ok: true, created, updated: NCAA_CALENDAR.length - created });
 });
 
@@ -845,7 +875,10 @@ app.post('/api/ballots/clear-mock', requireAdmin, async (req, res) => {
 });
 
 // ---- Site settings ----
-const DEFAULT_SITE_SETTINGS = { maxBallotSize: 25, allowLateSubmissions: false, announcementBanner: '' };
+const DEFAULT_SITE_SETTINGS = {
+  maxBallotSize: 25, allowLateSubmissions: false, announcementBanner: '',
+  leaderboardPublic: true, maintenanceMode: false, maintenanceMessage: '',
+};
 
 async function loadSiteSettings() {
   const doc = await CfbdData.findOne({ season: 0, slug: 'site_settings' }).lean();
@@ -856,6 +889,9 @@ async function saveSiteSettings(cfg) {
     maxBallotSize: Math.max(1, Math.min(25, Number(cfg.maxBallotSize) || 25)),
     allowLateSubmissions: !!cfg.allowLateSubmissions,
     announcementBanner: String(cfg.announcementBanner || '').slice(0, 300),
+    leaderboardPublic: cfg.leaderboardPublic !== false,
+    maintenanceMode: !!cfg.maintenanceMode,
+    maintenanceMessage: String(cfg.maintenanceMessage || '').slice(0, 300),
   };
   await CfbdData.findOneAndUpdate(
     { season: 0, slug: 'site_settings' },
@@ -866,11 +902,13 @@ async function saveSiteSettings(cfg) {
 }
 
 app.get('/api/settings', async (req, res) => {
-  // Public — the banner and ballot-size cap need to be readable by the public site.
+  // Public — the banner, maintenance flag, and ballot-size cap need to be readable by the public site.
   res.json(await loadSiteSettings());
 });
 app.post('/api/admin/settings', requireAdmin, async (req, res) => {
-  res.json({ ok: true, settings: await saveSiteSettings(req.body || {}) });
+  const settings = await saveSiteSettings(req.body || {});
+  await logAction(req, 'settings.save', settings.maintenanceMode ? 'maintenance mode ON' : 'updated');
+  res.json({ ok: true, settings });
 });
 
 // ---- User management ----
@@ -891,11 +929,13 @@ app.post('/api/admin/users/:id/role', requireAdmin, async (req, res) => {
   if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
+  await logAction(req, 'user.role', `${user.name} → ${role}`);
   res.json({ ok: true });
 });
 app.post('/api/admin/users/:id/ban', requireAdmin, async (req, res) => {
   const user = await User.findByIdAndUpdate(req.params.id, { banned: !!req.body.banned }, { new: true }).lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
+  await logAction(req, user.banned ? 'user.suspend' : 'user.reinstate', user.name);
   res.json({ ok: true, banned: user.banned });
 });
 
@@ -915,9 +955,39 @@ app.get('/api/admin/ballots', requireAdmin, async (req, res) => {
   res.json({ ballots, total });
 });
 app.delete('/api/admin/ballots/:id', requireAdmin, async (req, res) => {
+  const doc = await Ballot.findById(req.params.id).lean();
   const result = await Ballot.deleteOne({ _id: req.params.id });
   if (result.deletedCount === 0) return res.status(404).json({ error: 'Ballot not found' });
+  await logAction(req, 'ballot.delete', doc ? `${doc.userName} — Week ${doc.week}` : req.params.id);
   res.json({ ok: true });
+});
+
+// GET /api/admin/ballots/export — CSV of ballots matching the same filters as
+// the ballot moderation list, for offline review/archival.
+app.get('/api/admin/ballots/export', requireAdmin, async (req, res) => {
+  const { season, week, q } = req.query;
+  const filter = {};
+  if (season) filter.season = Number(season);
+  if (week) filter.week = Number(week);
+  if (q) filter.userName = { $regex: String(q), $options: 'i' };
+  const ballots = await Ballot.find(filter).sort({ week: 1, submittedAt: 1 }).lean();
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const maxRanks = ballots.reduce((m, b) => Math.max(m, b.rankings?.length || 0), 0);
+  const header = ['Voter', 'Season', 'Week', 'Submitted', ...Array.from({ length: maxRanks }, (_, i) => `Rank ${i + 1}`)];
+  const lines = [header.map(esc).join(',')];
+  for (const b of ballots) {
+    lines.push([b.userName, b.season, b.week, new Date(b.submittedAt).toISOString(), ...(b.rankings || [])].map(esc).join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="ballots${week ? `-week${week}` : ''}.csv"`);
+  res.send(lines.join('\n'));
+});
+
+// GET /api/admin/audit-log — recent admin actions, newest first.
+app.get('/api/admin/audit-log', requireAdmin, async (req, res) => {
+  const limit = Math.min(200, Number(req.query.limit) || 100);
+  const actions = await AdminAction.find().sort({ createdAt: -1 }).limit(limit).lean();
+  res.json({ actions });
 });
 
 // ---- Email notifications (deadline reminders + weekly recap) ----
@@ -1048,6 +1118,19 @@ app.post('/api/email/send-reminders', requireAdmin, async (req, res) => {
 app.post('/api/email/send-recap', requireAdmin, async (req, res) => {
   try { res.json({ ok: true, ...(await sendWeeklyRecap(2025, req.body?.week ? Number(req.body.week) : undefined)) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/email/remind-voter — nudge a single voter, ignoring the lead-time
+// window (used by the ballot completion panel's per-voter "Nudge" button).
+app.post('/api/email/remind-voter', requireAdmin, async (req, res) => {
+  const { userId, week, season = 2025 } = req.body || {};
+  if (!userId || !week) return res.status(400).json({ error: 'Missing userId or week' });
+  const user = await User.findById(userId).lean();
+  if (!user?.email) return res.status(404).json({ error: 'Voter has no email on file' });
+  const info = await getCurrentWeekInfo(season);
+  const { subject, html } = deadlineReminderEmail({ name: user.name, week: Number(week), deadline: info.deadline, appUrl: APP_URL });
+  const r = await sendEmail({ to: user.email, subject, html });
+  res.json({ ok: r.ok, method: r.method, error: r.error });
 });
 
 // ---- Schedule API ----
