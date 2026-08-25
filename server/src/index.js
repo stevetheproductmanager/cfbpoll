@@ -1249,6 +1249,7 @@ app.post('/api/schedule/run-now', requireAdmin, async (req, res) => {
 
 // Weekly rankings endpoint — computes rankings for each week server-side
 import { rankTeams, buildTeamsIndex } from '../../client/src/lib/rankAlgo.js';
+import { sanitizeWeights, sanitizeAdvanced, isValidSeason, scoreBacktest, gradePollAgainstGames } from './customPollLogic.js';
 
 const weeklyCache = new Map();
 
@@ -1415,26 +1416,6 @@ async function computeCustomRanking(season, weights, advanced) {
   }));
 }
 
-function sanitizeWeights(w) {
-  const keys = ['efficiency', 'results', 'sos', 'quality', 'momentum', 'conference'];
-  const out = {};
-  for (const k of keys) out[k] = Math.max(0, Math.min(1, Number(w?.[k]) || 0));
-  if (Object.values(out).every(v => v === 0)) return null;
-  return out;
-}
-
-// Advanced tuning knobs are all optional 0-100 sliders; anything missing/invalid
-// falls back to the neutral default that reproduces the official algorithm.
-const DEFAULT_ADVANCED = { movWeight: 50, sosBlend: 72, recencyDecay: 50, locationBonus: 50, badLossPenalty: 50 };
-function sanitizeAdvanced(a) {
-  const out = {};
-  for (const k of Object.keys(DEFAULT_ADVANCED)) {
-    const v = Number(a?.[k]);
-    out[k] = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : DEFAULT_ADVANCED[k];
-  }
-  return out;
-}
-
 // Live preview — compute a ranking from candidate weights without saving.
 app.post('/api/custom-polls/preview', requireAuth, async (req, res) => {
   const season = Number(req.body.season || 2025);
@@ -1469,10 +1450,10 @@ app.get('/api/custom-polls/backtest-seasons', async (req, res) => {
 });
 
 app.post('/api/custom-polls/backtest', requireAuth, async (req, res) => {
-  const season = Number(req.body.season);
-  const weights = sanitizeWeights(req.body.weights);
-  const advanced = sanitizeAdvanced(req.body.advanced);
-  if (!season) return res.status(400).json({ error: 'Missing season' });
+  const season = Number(req.body?.season);
+  if (!isValidSeason(season)) return res.status(400).json({ error: 'Invalid or missing season' });
+  const weights = sanitizeWeights(req.body?.weights);
+  const advanced = sanitizeAdvanced(req.body?.advanced);
   if (!weights) return res.status(400).json({ error: 'At least one weight must be greater than 0' });
   try {
     const teamsRaw = await readJson(season, 'teams');
@@ -1483,30 +1464,7 @@ app.post('/api/custom-polls/backtest', requireAuth, async (req, res) => {
     ]);
     if (!apTop25.length) return res.status(400).json({ error: `No AP Top 25 poll downloaded for ${season} — nothing to grade against` });
 
-    const apRankByTeam = new Map(apTop25.map((team, i) => [team, i + 1]));
-    const customRankByTeam = new Map(customRankings.map(t => [t.team, t.rank]));
-    const allTeams = new Set([...apRankByTeam.keys(), ...customRankByTeam.keys()]);
-    const perTeam = [...allTeams].map(team => {
-      const apRank = apRankByTeam.get(team) ?? null;
-      const customRank = customRankByTeam.get(team) ?? null;
-      const diff = apRank != null && customRank != null ? Math.abs(apRank - customRank) : null;
-      return { team, apRank, customRank, diff };
-    }).sort((a, b) => (a.apRank ?? 99) - (b.apRank ?? 99));
-
-    const both = perTeam.filter(t => t.diff != null);
-    const overlap = both.length; // how many teams appear in both Top 25s
-    const exactMatches = both.filter(t => t.diff === 0).length;
-    const avgRankDiff = both.length ? +(both.reduce((a, t) => a + t.diff, 0) / both.length).toFixed(2) : null;
-    // A simple 0-100 "closeness" score: full credit for an exact match, sliding
-    // to zero credit by the time a team is 24 spots off (or absent entirely).
-    const maxPossible = apTop25.length * 24;
-    const totalDiff = apTop25.reduce((sum, team) => {
-      const c = customRankByTeam.get(team);
-      const apRank = apRankByTeam.get(team);
-      return sum + (c != null ? Math.min(24, Math.abs(apRank - c)) : 24);
-    }, 0);
-    const closeness = maxPossible ? Math.round((1 - totalDiff / maxPossible) * 100) : null;
-
+    const { overlap, exactMatches, avgRankDiff, closeness, perTeam } = scoreBacktest(apTop25, customRankings);
     res.json({ season, apTop25, customTop25: customRankings.slice(0, 25).map(t => t.team), overlap, exactMatches, avgRankDiff, closeness, perTeam });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1573,6 +1531,7 @@ app.get('/api/custom-polls/gallery', async (req, res) => {
 // (Registered before the /:id route below so "leaderboard" doesn't get parsed as an id.)
 app.get('/api/custom-polls/leaderboard', async (req, res) => {
   const season = Number(req.query.season || 2025);
+  if (!isValidSeason(season)) return res.status(400).json({ error: 'Invalid season' });
   try {
     const [polls, games] = await Promise.all([
       CustomPoll.find({ published: true, season }).select('name userName weights rankings').lean(),
@@ -1581,27 +1540,8 @@ app.get('/api/custom-polls/leaderboard', async (req, res) => {
     if (!polls.length) return res.json({ polls: [] });
 
     const graded = polls.map(poll => {
-      const rankByTeam = new Map((poll.rankings || []).map(t => [t.team, t.rank]));
-      const weekMap = new Map(); // week -> { correct, total }
-      let correct = 0, total = 0;
-      for (const g of games) {
-        const rh = rankByTeam.get(g.home) ?? null;
-        const ra = rankByTeam.get(g.away) ?? null;
-        if (rh == null && ra == null) continue; // no prediction to grade
-        const predictedWinner = rh == null ? g.away : ra == null ? g.home : (rh < ra ? g.home : g.away);
-        const wasCorrect = predictedWinner === g.winner;
-        total++; if (wasCorrect) correct++;
-        const wk = weekMap.get(g.week) || { correct: 0, total: 0 };
-        wk.total++; if (wasCorrect) wk.correct++;
-        weekMap.set(g.week, wk);
-      }
-      const weekDetail = [...weekMap.entries()].sort((a, b) => a[0] - b[0])
-        .map(([week, w]) => ({ week, correct: w.correct, total: w.total, pct: w.total ? +((w.correct / w.total) * 100).toFixed(0) : 0 }));
-      return {
-        pollId: poll._id, name: poll.name, userName: poll.userName || 'Anonymous',
-        correct, total, accuracyPct: total ? +((correct / total) * 100).toFixed(1) : null,
-        weekDetail,
-      };
+      const { correct, total, accuracyPct, weekDetail } = gradePollAgainstGames(poll.rankings, games);
+      return { pollId: poll._id, name: poll.name, userName: poll.userName || 'Anonymous', correct, total, accuracyPct, weekDetail };
     }).filter(p => p.total > 0).sort((a, b) => (b.accuracyPct ?? -1) - (a.accuracyPct ?? -1));
 
     res.json({ season, polls: graded });
