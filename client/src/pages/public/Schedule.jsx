@@ -64,32 +64,20 @@ export default function Schedule() {
   // so there's no per-click refetch (and no stale-data flash while it loads).
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/schedule/games?season=${SEASON}`)
-      .then(r => r.json())
-      .then(d => {
+    Promise.all([
+      fetch(`/api/schedule/games?season=${SEASON}`).then(r => r.json()),
+      // The site's own "current week" (same one Game Picks/ballots use) —
+      // more meaningful than guessing off raw game dates, which gets thrown
+      // off by small-school games that run later into the calendar than FBS.
+      fetch(`/api/weeks?season=${SEASON}`).then(r => r.json()).catch(() => null),
+    ])
+      .then(([d, weeksInfo]) => {
         if (d.error) { setError(d.error); return }
         setData(d)
         setError('')
         if (d.weeks?.length) {
-          // Default to whichever week is "current" by date — the most recent
-          // week that has already kicked off, or the first week if the season
-          // hasn't started yet. Using game dates (not the `played` flag) avoids
-          // being thrown off by small-school games CFBD never posted a final
-          // score for.
-          const now = Date.now()
-          const weekDates = new Map()
-          for (const g of d.games) {
-            if (g.postseason || !g.startDate) continue
-            const t = new Date(g.startDate).getTime()
-            if (isNaN(t)) continue
-            if (!weekDates.has(g.week) || t < weekDates.get(g.week)) weekDates.set(g.week, t)
-          }
-          let best = d.weeks[0]
-          for (const wk of d.weeks) {
-            const t = weekDates.get(wk)
-            if (t != null && t <= now) best = wk
-          }
-          setWeek(best)
+          const currentWeek = weeksInfo?.current?.week
+          setWeek(currentWeek && d.weeks.includes(currentWeek) ? currentWeek : d.weeks[0])
         }
       })
       .catch(() => setError('Could not reach server'))
