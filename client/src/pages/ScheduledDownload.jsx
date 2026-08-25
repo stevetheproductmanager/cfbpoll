@@ -3,6 +3,113 @@ import { useToast } from '../store/ToastContext.jsx'
 import { useAuth } from '../store/AuthContext.jsx'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+const CURRENT_YEAR = new Date().getFullYear()
+
+// Slowly walks backward through past seasons downloading each one, with a
+// deliberate pause between seasons so we never hammer CFBD's API.
+function BackfillPanel() {
+  const toast = useToast()
+  const { authHeaders } = useAuth()
+  const [status, setStatus] = useState(null)
+  const [fromYear, setFromYear] = useState(2000)
+  const [toYear, setToYear] = useState(CURRENT_YEAR - 1)
+  const [delaySec, setDelaySec] = useState(12)
+
+  const fetchStatus = useCallback(() => {
+    fetch('/api/admin/backfill/status', { headers: authHeaders() }).then(r => r.json()).then(setStatus).catch(() => {})
+  }, [])
+
+  useEffect(() => { fetchStatus() }, [fetchStatus])
+  // Poll while a backfill is actively running so progress updates without a manual refresh.
+  useEffect(() => {
+    if (!status?.running) return
+    const id = setInterval(fetchStatus, 4000)
+    return () => clearInterval(id)
+  }, [status?.running, fetchStatus])
+
+  const start = async () => {
+    try {
+      const r = await fetch('/api/admin/backfill/start', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ fromYear: Number(fromYear), toYear: Number(toYear), delayMs: Number(delaySec) * 1000 }),
+      })
+      const d = await r.json()
+      if (!r.ok) { toast.error(d.error || 'Could not start backfill'); return }
+      toast.success(`Backfill started — ${d.queued} season(s) queued, ~${delaySec}s apart`)
+      fetchStatus()
+    } catch { toast.error('Could not reach server') }
+  }
+
+  const stop = async () => {
+    try {
+      const r = await fetch('/api/admin/backfill/stop', { method: 'POST', headers: authHeaders() })
+      if (!r.ok) { toast.error('Could not stop backfill'); return }
+      toast.info('Backfill stopped')
+      fetchStatus()
+    } catch { toast.error('Could not reach server') }
+  }
+
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+        <h2 style={{ margin: 0 }}>Historical Backfill</h2>
+        {status && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: status.running ? 'var(--ok)' : 'var(--muted)' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 99, background: status.running ? 'var(--ok)' : 'var(--border-strong)', boxShadow: status.running ? '0 0 6px var(--ok)' : 'none' }} />
+            {status.running ? `Running — ${status.currentYear ?? '…'} (${status.queueLength} left)` : 'Idle'}
+          </span>
+        )}
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.6 }}>
+        Downloads one season at a time, oldest data supported back to 2000, with a pause between each season to stay well under CFBD's rate limits.
+        Seasons that already have their core data (teams, games, SP+, AP poll) are skipped automatically, so it's safe to re-run.
+      </p>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12, opacity: status?.running ? 0.5 : 1 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>From</span>
+        <input type="number" className="input" style={{ width: 90 }} min={2000} max={CURRENT_YEAR} value={fromYear}
+          onChange={e => setFromYear(e.target.value)} disabled={status?.running} />
+        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>to</span>
+        <input type="number" className="input" style={{ width: 90 }} min={2000} max={CURRENT_YEAR} value={toYear}
+          onChange={e => setToYear(e.target.value)} disabled={status?.running} />
+        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>· pause</span>
+        <input type="number" className="input" style={{ width: 70 }} min={3} max={120} value={delaySec}
+          onChange={e => setDelaySec(e.target.value)} disabled={status?.running} />
+        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>sec/season</span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {status?.running ? (
+          <button className="btn btn-ghost" onClick={stop} style={{ fontSize: 13, color: 'var(--err)' }}>Stop</button>
+        ) : (
+          <button className="btn btn-primary" onClick={start} style={{ fontSize: 13 }}>Start Backfill</button>
+        )}
+        <button className="btn btn-ghost" onClick={fetchStatus} style={{ fontSize: 13 }}>Refresh</button>
+      </div>
+
+      {status && (status.done.length > 0 || status.skipped.length > 0 || status.failed.length > 0) && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12, fontSize: 12 }}>
+          <span>✅ Done: {status.done.join(', ') || '—'}</span>
+          <span>⏭ Skipped (already had data): {status.skipped.join(', ') || '—'}</span>
+          {status.failed.length > 0 && <span style={{ color: 'var(--err)' }}>⚠ Failed: {status.failed.join(', ')}</span>}
+        </div>
+      )}
+
+      {status?.log?.length > 0 && (
+        <div style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', maxHeight: 180, overflowY: 'auto', fontSize: 12 }}>
+          {status.log.slice().reverse().map((entry, i) => (
+            <div key={i} style={{ padding: '4px 0', borderBottom: i < status.log.length - 1 ? '1px solid var(--border)' : 'none', display: 'flex', gap: 8 }}>
+              <span style={{ color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', fontSize: 11 }}>
+                {new Date(entry.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <span style={{ color: /fail|error/i.test(entry.message) ? 'var(--err)' : 'var(--text-secondary)' }}>{entry.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function ScheduledDownload() {
   const toast = useToast()
@@ -56,6 +163,7 @@ export default function ScheduledDownload() {
   }
 
   return (
+    <>
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ margin: 0 }}>Scheduled Data Download</h2>
@@ -142,6 +250,11 @@ export default function ScheduledDownload() {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <BackfillPanel />
+      </div>
+    </>
   )
 }

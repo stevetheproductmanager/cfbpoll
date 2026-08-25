@@ -49,6 +49,13 @@ export default function Methodology() {
       <Section title="📊 Leaderboard & Accuracy">
         <p>Voter <strong>alignment score</strong> awards up to 25 points per team based on how close your ranking is to that week's consensus (exact match = 25, each spot off costs a point, more than 25 spots off or unranked = 0). <strong>Bold picks</strong> are teams you ranked 8+ spots from consensus. <strong>Accuracy</strong> shown on voter profiles is your average alignment expressed as a percentage of the maximum possible score.</p>
       </Section>
+
+      <Section title="🗄️ Data Source">
+        <p>
+          Every team, game, score, and rating on this site — including the historical seasons used for algorithm backtesting — is sourced from{' '}
+          <a href="https://collegefootballdata.com" target="_blank" rel="noreferrer">College Football Data (CFBD)</a>, a free, open college football API. We're grateful for the data and not affiliated with them.
+        </p>
+      </Section>
     </div>
   )
 }

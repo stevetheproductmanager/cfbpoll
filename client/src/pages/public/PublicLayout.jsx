@@ -93,9 +93,17 @@ export default function PublicLayout() {
           </LogoProvider>
         </FavoritesProvider>
       )}
-      <footer style={{ textAlign: 'center', padding: '20px 16px 32px', fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-        <Link to="/methodology" style={{ color: 'var(--muted)' }}>How Rankings Work</Link>
-        <Link to="/legal" style={{ color: 'var(--muted)' }}>Terms &amp; Privacy</Link>
+      <footer style={{ textAlign: 'center', padding: '20px 16px 32px', fontSize: 12, color: 'var(--muted)' }}>
+        <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+          <Link to="/methodology" style={{ color: 'var(--muted)' }}>How Rankings Work</Link>
+          <Link to="/legal" style={{ color: 'var(--muted)' }}>Terms &amp; Privacy</Link>
+        </div>
+        <div>
+          Game, team, and ratings data provided by{' '}
+          <a href="https://collegefootballdata.com" target="_blank" rel="noreferrer" style={{ color: 'var(--muted)', textDecoration: 'underline' }}>
+            College Football Data (CFBD)
+          </a>.
+        </div>
       </footer>
     </>
   )

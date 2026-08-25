@@ -62,35 +62,7 @@ function addScheduleLog(msg) {
 async function runScheduledDownload(year = 2025) {
   addScheduleLog(`Starting scheduled CFBD data download for ${year}...`);
   try {
-    const results = [];
-    const errors = [];
-    for (const ep of ENDPOINTS) {
-      const candidates = ep.candidates || [ep.path];
-      try {
-        const out = await tryCandidates(year, candidates);
-        if (out.ok) {
-          await writeJson(year, ep.slug, out.data);
-          const count = Array.isArray(out.data) ? out.data.length : (out.data ? 1 : 0);
-          results.push({ slug: ep.slug, count });
-          if (ep.slug === 'teams' && Array.isArray(out.data)) {
-            const ops = out.data.filter(t => t.school).map(t => ({
-              updateOne: {
-                filter: { school: t.school, season: year },
-                update: { school: t.school, conference: t.conference, mascot: t.mascot, abbreviation: t.abbreviation, logos: t.logos || [], color: t.color, altColor: t.alt_color || t.altColor, season: year },
-                upsert: true,
-              },
-            }));
-            if (ops.length) await Team.bulkWrite(ops);
-          }
-        } else {
-          errors.push({ slug: ep.slug, status: out.status });
-        }
-      } catch (inner) {
-        errors.push({ slug: ep.slug, message: String(inner?.message || inner) });
-      }
-      await new Promise(r => setTimeout(r, 150));
-    }
-    weeklyCache.delete(String(year));
+    const { results, errors } = await downloadSeasonEndpoints(year);
     try { weeklyCache.set(String(year), await computeWeeklyRankings(String(year))); } catch {}
     addScheduleLog(`Download complete: ${results.length} OK, ${errors.length} errors`);
   } catch (e) {
@@ -271,57 +243,183 @@ async function tryCandidates(year, candidates) {
   return { ok: false, ...last };
 }
 
+// Endpoints a season needs before rankings/backtesting will actually work
+// off it — used both to report per-season coverage and to let the backfill
+// skip seasons that already have everything they need.
+const CORE_SLUGS = ['teams', 'teams-fbs', 'games-regular', 'sp-ratings', 'polls-rankings'];
+
+// Downloads every configured CFBD endpoint for one season and saves it. Pulled
+// out into its own function so the manual download button, the nightly cron
+// job, and the historical backfill below all share one implementation instead
+// of three near-duplicate copies. `onEndpointDone` fires after each endpoint
+// so a caller can report live progress without waiting for the whole season.
+async function downloadSeasonEndpoints(year, { onEndpointDone } = {}) {
+  const results = [];
+  const errors = [];
+  for (const ep of ENDPOINTS) {
+    const candidates = ep.candidates || [ep.path];
+    try {
+      const out = await tryCandidates(year, candidates);
+      if (out.ok) {
+        const savedTo = await writeJson(year, ep.slug, out.data);
+        const count = Array.isArray(out.data) ? out.data.length : (out.data ? 1 : 0);
+        results.push({ slug: ep.slug, pathTried: out.path, savedTo, count });
+
+        // If this is teams data, also upsert into Teams collection
+        if (ep.slug === 'teams' && Array.isArray(out.data)) {
+          const ops = out.data
+            .filter(t => t.school)
+            .map(t => ({
+              updateOne: {
+                filter: { school: t.school, season: year },
+                update: {
+                  school: t.school,
+                  conference: t.conference,
+                  mascot: t.mascot,
+                  abbreviation: t.abbreviation,
+                  logos: t.logos || [],
+                  color: t.color,
+                  altColor: t.alt_color || t.altColor,
+                  season: year,
+                },
+                upsert: true,
+              },
+            }));
+          if (ops.length) await Team.bulkWrite(ops);
+        }
+      } else {
+        errors.push({ slug: ep.slug, pathTried: out.path, status: out.status, message: typeof out.data === 'string' ? out.data : JSON.stringify(out.data).slice(0, 400) });
+      }
+    } catch (inner) {
+      errors.push({ slug: ep.slug, message: String(inner?.message || inner) });
+    }
+    onEndpointDone?.({ slug: ep.slug, results, errors });
+    // Small pause between calls to stay well under CFBD's rate limits.
+    await new Promise(r => setTimeout(r, 150));
+  }
+  weeklyCache.delete(String(year));
+  return { results, errors };
+}
+
+async function isSeasonCoreComplete(year) {
+  const have = await CfbdData.find({ season: year, slug: { $in: CORE_SLUGS } }).distinct('slug');
+  return CORE_SLUGS.every(s => have.includes(s));
+}
+
+// Tracks in-flight/most-recent manual downloads, keyed by year, so the route
+// can respond immediately (avoiding Heroku's 30s request timeout on seasons
+// with a lot of endpoints — a full download can run well past that) and the
+// client can poll for progress instead of holding the connection open.
+const downloadStatus = new Map();
+
 app.post('/api/download', requireAdmin, async (req, res) => {
   try {
     const year = Number(req.body?.year || 2025);
-    const results = [];
-    const errors = [];
+    const existing = downloadStatus.get(year);
+    if (existing?.running) return res.status(409).json({ error: `A download for ${year} is already running` });
 
-    for (const ep of ENDPOINTS) {
-      const candidates = ep.candidates || [ep.path];
-      try {
-        const out = await tryCandidates(year, candidates);
-        if (out.ok) {
-          const savedTo = await writeJson(year, ep.slug, out.data);
-          const count = Array.isArray(out.data) ? out.data.length : (out.data ? 1 : 0);
-          results.push({ slug: ep.slug, pathTried: out.path, savedTo, count });
+    const st = { running: true, results: [], errors: [], summary: null, startedAt: new Date(), finishedAt: null };
+    downloadStatus.set(year, st);
+    res.status(202).json({ year, started: true });
 
-          // If this is teams data, also upsert into Teams collection
-          if (ep.slug === 'teams' && Array.isArray(out.data)) {
-            const ops = out.data
-              .filter(t => t.school)
-              .map(t => ({
-                updateOne: {
-                  filter: { school: t.school, season: year },
-                  update: {
-                    school: t.school,
-                    conference: t.conference,
-                    mascot: t.mascot,
-                    abbreviation: t.abbreviation,
-                    logos: t.logos || [],
-                    color: t.color,
-                    altColor: t.alt_color || t.altColor,
-                    season: year,
-                  },
-                  upsert: true,
-                },
-              }));
-            if (ops.length) await Team.bulkWrite(ops);
-          }
-        } else {
-          errors.push({ slug: ep.slug, pathTried: out.path, status: out.status, message: typeof out.data === 'string' ? out.data : JSON.stringify(out.data).slice(0, 400) });
-        }
-      } catch (inner) {
-        errors.push({ slug: ep.slug, message: String(inner?.message || inner) });
-      }
-      await new Promise(r => setTimeout(r, 150));
-    }
-
-    weeklyCache.delete(String(year));
-    res.json({ year, baseUrl: CFBD_BASE_URL, results, errors, summary: { ok: errors.length === 0, downloaded: results.length, failed: errors.length } });
+    downloadSeasonEndpoints(year, { onEndpointDone: ({ results, errors }) => { st.results = results; st.errors = errors; } })
+      .then(({ results, errors }) => {
+        st.results = results; st.errors = errors;
+        st.summary = { ok: errors.length === 0, downloaded: results.length, failed: errors.length };
+        st.running = false; st.finishedAt = new Date();
+      })
+      .catch(e => {
+        st.errors = [...st.errors, { slug: 'fatal', message: String(e?.message || e) }];
+        st.summary = { ok: false, downloaded: st.results.length, failed: st.errors.length };
+        st.running = false; st.finishedAt = new Date();
+      });
   } catch (e) {
-    res.status(200).json({ fatal: true, message: String(e?.message || e) });
+    res.status(500).json({ error: String(e?.message || e) });
   }
+});
+
+// Poll target for the background download kicked off above.
+app.get('/api/download/status/:year', requireAdmin, (req, res) => {
+  const year = Number(req.params.year);
+  const st = downloadStatus.get(year);
+  if (!st) return res.json({ year, running: false, results: [], errors: [], summary: null });
+  res.json({ year, baseUrl: CFBD_BASE_URL, ...st });
+});
+
+// ---- Historical backfill ----
+// Slowly walks backward from a starting season to as far back as 2000,
+// downloading one season at a time with a deliberate pause in between so we
+// never hammer CFBD's API. Runs detached from any single HTTP request (same
+// reason as /api/download above) and survives just fine across polls since
+// state lives in this module-level object.
+const backfill = { running: false, queue: [], currentYear: null, done: [], skipped: [], failed: [], startedAt: null, delayMs: 12000, log: [] };
+function backfillLog(msg) {
+  backfill.log.push({ time: new Date().toISOString(), message: msg });
+  if (backfill.log.length > 100) backfill.log.shift();
+  log(`[backfill] ${msg}`);
+}
+
+async function runBackfillLoop() {
+  while (backfill.running && backfill.queue.length) {
+    const year = backfill.queue.shift();
+    backfill.currentYear = year;
+    try {
+      if (await isSeasonCoreComplete(year)) {
+        backfillLog(`${year}: already have core data, skipping`);
+        backfill.skipped.push(year);
+      } else {
+        backfillLog(`${year}: downloading...`);
+        const { results, errors } = await downloadSeasonEndpoints(year);
+        if (errors.length) backfillLog(`${year}: done with ${errors.length} endpoint error(s) (${results.length} ok)`);
+        else backfillLog(`${year}: done (${results.length} endpoints)`);
+        backfill.done.push(year);
+      }
+    } catch (e) {
+      backfillLog(`${year}: failed — ${e.message}`);
+      backfill.failed.push(year);
+    }
+    backfill.currentYear = null;
+    if (backfill.running && backfill.queue.length) await new Promise(r => setTimeout(r, backfill.delayMs));
+  }
+  const stoppedEarly = backfill.queue.length > 0;
+  backfill.running = false;
+  backfillLog(stoppedEarly ? 'Backfill stopped' : 'Backfill complete');
+}
+
+// POST { fromYear=2000, toYear=<last completed season>, delayMs=12000 } —
+// queues years newest-first (so recently-relevant seasons finish before very
+// old ones) and lets runBackfillLoop grind through them in the background.
+app.post('/api/admin/backfill/start', requireAdmin, async (req, res) => {
+  if (backfill.running) return res.status(409).json({ error: 'A backfill is already running' });
+  const nowYear = new Date().getFullYear();
+  const fromYear = Math.max(2000, Math.min(nowYear, Number(req.body?.fromYear) || 2000));
+  const toYear = Math.max(fromYear, Math.min(nowYear, Number(req.body?.toYear) || nowYear));
+  const delayMs = Math.min(120000, Math.max(3000, Number(req.body?.delayMs) || 12000));
+  const years = [];
+  for (let y = toYear; y >= fromYear; y--) years.push(y);
+
+  backfill.queue = years; backfill.done = []; backfill.skipped = []; backfill.failed = [];
+  backfill.delayMs = delayMs; backfill.running = true; backfill.startedAt = new Date(); backfill.currentYear = null;
+  backfillLog(`Starting backfill: ${fromYear}–${toYear} (${years.length} seasons), ${Math.round(delayMs / 1000)}s between seasons`);
+  runBackfillLoop();
+  await logAction(req, 'backfill.start', `${fromYear}-${toYear}, ${years.length} seasons`);
+  res.json({ ok: true, queued: years.length });
+});
+
+app.post('/api/admin/backfill/stop', requireAdmin, async (req, res) => {
+  const wasRunning = backfill.running;
+  backfill.running = false;
+  backfill.queue = [];
+  if (wasRunning) { backfillLog('Stop requested by admin'); await logAction(req, 'backfill.stop', ''); }
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/backfill/status', requireAdmin, (req, res) => {
+  res.json({
+    running: backfill.running, currentYear: backfill.currentYear, queueLength: backfill.queue.length,
+    done: backfill.done, skipped: backfill.skipped, failed: backfill.failed,
+    startedAt: backfill.startedAt, delayMs: backfill.delayMs, log: backfill.log.slice(-40),
+  });
 });
 
 
@@ -1158,7 +1256,7 @@ app.get('/api/admin/rate-limit-stats', requireAdmin, (req, res) => {
 // GET /api/admin/data-coverage — which CFBD endpoints have been downloaded
 // for which seasons, so an admin can see at a glance what's missing before
 // a feature (like backtesting) silently comes up empty for a given year.
-const CORE_SLUGS = ['teams', 'teams-fbs', 'games-regular', 'sp-ratings', 'polls-rankings'];
+// (CORE_SLUGS is defined earlier, alongside the downloader it's also used by.)
 app.get('/api/admin/data-coverage', requireAdmin, async (req, res) => {
   try {
     const rows = await CfbdData.find({ season: { $gt: 0 } }).select('season slug downloadedAt').lean();
