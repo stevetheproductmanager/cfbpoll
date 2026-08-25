@@ -60,23 +60,41 @@ export default function Schedule() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  // Fetch the whole season once — week switching is then purely client-side,
+  // so there's no per-click refetch (and no stale-data flash while it loads).
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/schedule/games?season=${SEASON}${week != null ? `&week=${week}` : ''}`)
+    fetch(`/api/schedule/games?season=${SEASON}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) { setError(d.error); return }
         setData(d)
         setError('')
-        if (week === null && d.weeks?.length) {
-          // Default to the first week with an unplayed game, else the last week.
-          const firstUpcoming = d.weeks.find(wk => d.games.some(g => g.week === wk && !g.postseason && !g.played))
-          setWeek(firstUpcoming ?? d.weeks[d.weeks.length - 1])
+        if (d.weeks?.length) {
+          // Default to whichever week is "current" by date — the most recent
+          // week that has already kicked off, or the first week if the season
+          // hasn't started yet. Using game dates (not the `played` flag) avoids
+          // being thrown off by small-school games CFBD never posted a final
+          // score for.
+          const now = Date.now()
+          const weekDates = new Map()
+          for (const g of d.games) {
+            if (g.postseason || !g.startDate) continue
+            const t = new Date(g.startDate).getTime()
+            if (isNaN(t)) continue
+            if (!weekDates.has(g.week) || t < weekDates.get(g.week)) weekDates.set(g.week, t)
+          }
+          let best = d.weeks[0]
+          for (const wk of d.weeks) {
+            const t = weekDates.get(wk)
+            if (t != null && t <= now) best = wk
+          }
+          setWeek(best)
         }
       })
       .catch(() => setError('Could not reach server'))
       .finally(() => setLoading(false))
-  }, [week])
+  }, [])
 
   const weeks = data?.weeks || []
   const games = useMemo(() => (data?.games || []).filter(g => week != null ? g.week === week && !g.postseason : false), [data, week])
@@ -111,11 +129,11 @@ export default function Schedule() {
         </div>
       )}
 
-      {!error && loading && !data && (
+      {!error && loading && (
         <div className="card" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>Loading schedule…</div>
       )}
 
-      {!error && data && (
+      {!error && !loading && data && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           {games.length === 0 ? (
             <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>No games for this week.</div>
