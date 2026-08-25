@@ -40,6 +40,20 @@ const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 // to the next season is one env var instead of hunting down ~50 call sites.
 const CURRENT_SEASON = Number(process.env.CURRENT_SEASON) || 2025;
 
+// A malformed :id route param (anything that isn't a 24-char hex ObjectId)
+// makes Mongoose throw inside the async handlers below. Express 4 doesn't
+// catch rejections from async route handlers, so an uncaught one becomes an
+// unhandled promise rejection — which by default terminates the whole Node
+// process (verified locally: one malformed DELETE /api/comments/:id took
+// the entire server down for every user, not just the request). This is the
+// last-resort net; routes that take user-reachable ids also validate the id
+// explicitly below via isValidId() so callers get a proper 400 instead of a
+// dropped connection.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection] kept process alive:', reason);
+});
+const isValidId = (id) => /^[0-9a-f]{24}$/i.test(String(id || ''));
+
 // Fire-and-forget audit log entry. Never throws — a logging failure should
 // never break the admin action it's describing.
 async function logAction(req, action, details = '') {
@@ -1157,6 +1171,7 @@ app.get('/api/admin/users', requireAdmin, async (req, res) => {
   });
 });
 app.post('/api/admin/users/:id/role', requireAdmin, async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid user id' });
   const { role } = req.body;
   if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).lean();
@@ -1165,6 +1180,7 @@ app.post('/api/admin/users/:id/role', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 app.post('/api/admin/users/:id/ban', requireAdmin, async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid user id' });
   const user = await User.findByIdAndUpdate(req.params.id, { banned: !!req.body.banned }, { new: true }).lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
   await logAction(req, user.banned ? 'user.suspend' : 'user.reinstate', user.name);
@@ -1187,6 +1203,7 @@ app.get('/api/admin/ballots', requireAdmin, async (req, res) => {
   res.json({ ballots, total });
 });
 app.delete('/api/admin/ballots/:id', requireAdmin, async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid ballot id' });
   const doc = await Ballot.findById(req.params.id).lean();
   const result = await Ballot.deleteOne({ _id: req.params.id });
   if (result.deletedCount === 0) return res.status(404).json({ error: 'Ballot not found' });
@@ -1247,12 +1264,14 @@ app.get('/api/admin/custom-polls', requireAdmin, async (req, res) => {
   });
 });
 app.post('/api/admin/custom-polls/:id/unpublish', requireAdmin, async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid poll id' });
   const poll = await CustomPoll.findByIdAndUpdate(req.params.id, { published: false }, { new: true }).lean();
   if (!poll) return res.status(404).json({ error: 'Poll not found' });
   await logAction(req, 'custompoll.unpublish', `${poll.name} (${poll.userName})`);
   res.json({ ok: true });
 });
 app.delete('/api/admin/custom-polls/:id', requireAdmin, async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid poll id' });
   const poll = await CustomPoll.findById(req.params.id).lean();
   const result = await CustomPoll.deleteOne({ _id: req.params.id });
   if (result.deletedCount === 0) return res.status(404).json({ error: 'Poll not found' });
@@ -1836,6 +1855,7 @@ async function publishBallotForPoll(poll) {
 }
 
 app.post('/api/custom-polls/:id/recompute', requireAuth, async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid poll id' });
   const poll = await CustomPoll.findById(req.params.id);
   if (!poll) return res.status(404).json({ error: 'Poll not found' });
   if (poll.userId !== req.user.id) return res.status(403).json({ error: 'Not your poll' });
@@ -1851,6 +1871,7 @@ app.post('/api/custom-polls/:id/recompute', requireAuth, async (req, res) => {
 
 // Toggle whether this poll auto-submits as the owner's Computer ballot.
 app.post('/api/custom-polls/:id/publish', requireAuth, async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid poll id' });
   const poll = await CustomPoll.findById(req.params.id);
   if (!poll) return res.status(404).json({ error: 'Poll not found' });
   if (poll.userId !== req.user.id) return res.status(403).json({ error: 'Not your poll' });
@@ -1864,6 +1885,7 @@ app.post('/api/custom-polls/:id/publish', requireAuth, async (req, res) => {
 });
 
 app.delete('/api/custom-polls/:id', requireAuth, async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid poll id' });
   const poll = await CustomPoll.findById(req.params.id).lean();
   if (!poll) return res.status(404).json({ error: 'Poll not found' });
   if (poll.userId !== req.user.id) return res.status(403).json({ error: 'Not your poll' });
@@ -1915,6 +1937,7 @@ app.post('/api/comments', writeLimiter, requireAuth, async (req, res) => {
 });
 
 app.delete('/api/comments/:id', requireAuth, async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid comment id' });
   const comment = await Comment.findById(req.params.id).lean();
   if (!comment) return res.status(404).json({ error: 'Comment not found' });
   if (comment.userId !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Not your comment' });
