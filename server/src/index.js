@@ -35,6 +35,10 @@ import { sendEmail, getEmailLog, deadlineReminderEmail, weeklyRecapEmail } from 
 import { recordRateLimitHit, getRateLimitStats } from './rateLimitStats.js';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+// Single source of truth for "the season we're currently running" — every
+// route below defaults to this instead of a hardcoded 2025, so rolling over
+// to the next season is one env var instead of hunting down ~50 call sites.
+const CURRENT_SEASON = Number(process.env.CURRENT_SEASON) || 2025;
 
 // Fire-and-forget audit log entry. Never throws — a logging failure should
 // never break the admin action it's describing.
@@ -59,7 +63,7 @@ function addScheduleLog(msg) {
   log(`[scheduler] ${msg}`);
 }
 
-async function runScheduledDownload(year = 2025) {
+async function runScheduledDownload(year = CURRENT_SEASON) {
   addScheduleLog(`Starting scheduled CFBD data download for ${year}...`);
   try {
     const { results, errors } = await downloadSeasonEndpoints(year);
@@ -87,10 +91,20 @@ function applySchedule(config) {
   if (scheduledTask) { scheduledTask.stop(); scheduledTask = null; }
   if (!config?.enabled || !config?.cronExpr) return;
   if (!cron.validate(config.cronExpr)) { addScheduleLog(`Invalid cron: ${config.cronExpr}`); return; }
-  scheduledTask = cron.schedule(config.cronExpr, () => runScheduledDownload(config.year || 2025), { timezone: 'America/Los_Angeles' });
+  scheduledTask = cron.schedule(config.cronExpr, () => runScheduledDownload(config.year || CURRENT_SEASON), { timezone: 'America/Los_Angeles' });
   addScheduleLog(`Schedule active: "${config.cronExpr}" (${config.description || 'custom'})`);
 }
-app.use(cors());
+// Restrict cross-origin calls to the actual frontend origin(s) instead of
+// reflecting every Origin — same-origin requests (no Origin header, e.g.
+// curl/server-to-server, or the client served from this same Express app in
+// prod) are always allowed through.
+const ALLOWED_ORIGINS = new Set([APP_URL, 'http://localhost:5173', 'http://localhost:3000']);
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+    cb(new Error('Not allowed by CORS'));
+  },
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('dev'));
 
@@ -162,7 +176,7 @@ app.use('/api/teams', makeTeamsRouter({
 
 // Team logos endpoint — serves name→logo map from DB (falls back to CFBD data)
 app.get('/api/teams/logos', async (req, res) => {
-  const year = Number(req.query.year || 2025);
+  const year = Number(req.query.year || CURRENT_SEASON);
   try {
     // Try teams collection first
     const teams = await Team.find({ season: year }, 'school logos').lean();
@@ -190,7 +204,7 @@ app.get('/api/teams/logos', async (req, res) => {
 
 app.get('/api/data/manifest', async (req, res) => {
   try {
-    const year = Number(req.query.year || 2025);
+    const year = Number(req.query.year || CURRENT_SEASON);
     const docs = await CfbdData.find({ season: year }, 'slug downloadedAt').lean();
 
     const entries = docs.map(d => ({
@@ -217,7 +231,7 @@ app.get('/api/status', (req, res) => {
 
 app.get('/api/dashboard', async (req, res) => {
   try {
-    const season = Number(req.query.season || 2025);
+    const season = Number(req.query.season || CURRENT_SEASON);
     const info = await getCurrentWeekInfo(season);
     const ballotCount = await Ballot.countDocuments({ season, week: info.week });
     const totalVoters = await Ballot.distinct('userId', { season }).then(a => a.length);
@@ -325,7 +339,7 @@ const downloadStatus = new Map();
 
 app.post('/api/download', requireAdmin, async (req, res) => {
   try {
-    const year = Number(req.body?.year || 2025);
+    const year = Number(req.body?.year || CURRENT_SEASON);
     const existing = downloadStatus.get(year);
     if (existing?.running) return res.status(409).json({ error: `A download for ${year} is already running` });
 
@@ -503,7 +517,7 @@ function computeIsOpen(wk) {
 // *number* isn't necessarily the one voting should be happening on. Falls back
 // to the highest-numbered week overall (so the public site still shows a
 // "Voting Closed" state) only when nothing is currently open.
-async function getCurrentWeekInfo(season = 2025) {
+async function getCurrentWeekInfo(season = CURRENT_SEASON) {
   const allWeeks = await Week.find({ season }).sort({ week: -1 }).lean();
   if (!allWeeks.length) return { week: 1, label: null, deadline: null, isOpen: true, season };
   // A stale week can still carry isOpen:true in the DB even though its
@@ -514,7 +528,7 @@ async function getCurrentWeekInfo(season = 2025) {
   return { week: wk.week, label: wk.label || null, deadline: wk.deadline, isOpen: computeIsOpen(wk), season };
 }
 
-async function ensureWeekExists(season = 2025) {
+async function ensureWeekExists(season = CURRENT_SEASON) {
   const exists = await Week.findOne({ season }).lean();
   if (!exists) {
     const startDate = currentWeekTuesday();
@@ -565,7 +579,7 @@ function computeConsensus(ballots) {
 
 // GET /api/weeks
 app.get('/api/weeks', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   await ensureWeekExists(season);
   const info = await getCurrentWeekInfo(season);
   const allWeeks = await Week.find({ season }).sort({ week: 1 }).lean();
@@ -590,7 +604,7 @@ app.get('/api/weeks', async (req, res) => {
 // GET /api/weeks/:week/incomplete-voters — registered voters who have not
 // submitted a ballot for this week yet. Powers the ballot-completion panel.
 app.get('/api/weeks/:week/incomplete-voters', requireAdmin, async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const week = Number(req.params.week);
   const [users, votedIds] = await Promise.all([
     User.find({ banned: { $ne: true } }).lean(),
@@ -612,7 +626,7 @@ async function closeOtherWeeks(season, keepWeek) {
 
 // POST /api/weeks/advance
 app.post('/api/weeks/advance', requireAdmin, async (req, res) => {
-  const season = Number(req.body.season || 2025);
+  const season = Number(req.body.season || CURRENT_SEASON);
   const current = await Week.findOne({ season }).sort({ week: -1 });
   const newWeek = (current?.week || 0) + 1;
   // Continue chronologically from the previous week's end date when we have
@@ -629,7 +643,7 @@ app.post('/api/weeks/advance', requireAdmin, async (req, res) => {
 
 // POST /api/weeks/update
 app.post('/api/weeks/update', requireAdmin, async (req, res) => {
-  const { week, deadline, startDate, endDate, open, label, season = 2025 } = req.body;
+  const { week, deadline, startDate, endDate, open, label, season = CURRENT_SEASON } = req.body;
   const wk = await Week.findOne({ season, week });
   if (!wk) return res.status(404).json({ error: 'Week not found' });
   if (startDate) wk.startDate = new Date(startDate);
@@ -659,7 +673,7 @@ app.post('/api/weeks/update', requireAdmin, async (req, res) => {
 
 // POST /api/weeks/create — manually add any week (not just the next sequential one)
 app.post('/api/weeks/create', requireAdmin, async (req, res) => {
-  const { week, label, deadline, startDate, endDate, isOpen = false, season = 2025 } = req.body;
+  const { week, label, deadline, startDate, endDate, isOpen = false, season = CURRENT_SEASON } = req.body;
   if (!week || !Number.isFinite(Number(week))) return res.status(400).json({ error: 'Missing/invalid week number' });
   const exists = await Week.findOne({ season, week });
   if (exists) return res.status(409).json({ error: `Week ${week} already exists for ${season}` });
@@ -698,7 +712,7 @@ const NCAA_CALENDAR = [
 // insert — existing admin state (which week is open, custom labels) is left
 // alone.
 app.post('/api/weeks/seed-calendar', requireAdmin, async (req, res) => {
-  const { season = 2025, startDate } = req.body;
+  const { season = CURRENT_SEASON, startDate } = req.body;
   const anchor = startDate ? new Date(startDate) : currentWeekTuesday();
   const existing = new Set((await Week.find({ season }, 'week').lean()).map(w => w.week));
   const ops = NCAA_CALENDAR.map(w => {
@@ -723,7 +737,7 @@ app.post('/api/weeks/seed-calendar', requireAdmin, async (req, res) => {
 
 // GET /api/ballots
 app.get('/api/ballots', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const week = req.query.week ? Number(req.query.week) : null;
   const filter = { season };
   if (week) filter.week = week;
@@ -734,7 +748,7 @@ app.get('/api/ballots', async (req, res) => {
 
 // POST /api/ballots
 app.post('/api/ballots', ballotWriteLimiter, requireAuth, async (req, res) => {
-  const { rankings, season = 2025, ballotType, customPollId, note, confidence } = req.body;
+  const { rankings, season = CURRENT_SEASON, ballotType, customPollId, note, confidence } = req.body;
   const userId = req.user.id;
   const userName = req.user.name;
   const type = ballotType === 'computer' ? 'computer' : 'human';
@@ -775,7 +789,7 @@ app.post('/api/ballots', ballotWriteLimiter, requireAuth, async (req, res) => {
 
 // DELETE /api/ballots/recall
 app.delete('/api/ballots/recall', ballotWriteLimiter, requireAuth, async (req, res) => {
-  const { season = 2025 } = req.body;
+  const { season = CURRENT_SEASON } = req.body;
   const userId = req.user.id;
   const info = await getCurrentWeekInfo(season);
   if (!info.isOpen) return res.status(400).json({ error: 'Voting is closed — cannot recall ballot' });
@@ -804,7 +818,7 @@ app.post('/api/me/favorites/toggle', requireAuth, async (req, res) => {
 
 // GET /api/ballots/consensus
 app.get('/api/ballots/consensus', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const info = await getCurrentWeekInfo(season);
   const week = Number(req.query.week) || info.week;
   const typeFilter = ballotTypeFilter(req.query.type);
@@ -830,7 +844,7 @@ app.get('/api/ballots/consensus', async (req, res) => {
 
 // GET /api/ballots/team-detail?team=...&week=N — rank history + who voted for this team
 app.get('/api/ballots/team-detail', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const team = req.query.team;
   if (!team) return res.status(400).json({ error: 'Missing team' });
   const info = await getCurrentWeekInfo(season);
@@ -860,7 +874,7 @@ app.get('/api/ballots/team-detail', async (req, res) => {
 
 // GET /api/ballots/leaderboard
 app.get('/api/ballots/leaderboard', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const includeMock = req.query.includeMock === 'true';
   const ballotFilter = { season };
   if (!includeMock) ballotFilter.userId = { $not: /^mock_/ };
@@ -919,7 +933,7 @@ app.get('/api/ballots/leaderboard', async (req, res) => {
 
 // GET /api/ballots/history/:userId
 app.get('/api/ballots/history/:userId', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const userBallots = await Ballot.find({ userId: req.params.userId, season }).sort({ week: 1 }).lean();
   if (!userBallots.length) return res.json({ userId: req.params.userId, weeks: [] });
 
@@ -974,7 +988,7 @@ function seededRngLocal(seed) {
 
 // POST /api/ballots/seed-mock
 app.post('/api/ballots/seed-mock', requireAdmin, async (req, res) => {
-  const season = 2025;
+  const season = CURRENT_SEASON;
   const existing = await Ballot.findOne({ userId: /^mock_/, season }).lean();
   if (existing) return res.json({ ok: true, message: 'Mock data already exists — clear first to re-seed' });
 
@@ -1339,7 +1353,7 @@ async function emailableUsers() {
   return User.find({ email: { $exists: true, $ne: null } }).lean();
 }
 
-async function sendDeadlineReminders(season = 2025, { force = false } = {}) {
+async function sendDeadlineReminders(season = CURRENT_SEASON, { force = false } = {}) {
   const cfg = await loadEmailConfig();
   const info = await getCurrentWeekInfo(season);
   if (!info.isOpen || !info.deadline) return { sent: 0, reason: 'voting not open' };
@@ -1367,7 +1381,7 @@ async function sendDeadlineReminders(season = 2025, { force = false } = {}) {
   return { sent, week: info.week };
 }
 
-async function sendWeeklyRecap(season = 2025, weekArg) {
+async function sendWeeklyRecap(season = CURRENT_SEASON, weekArg) {
   const info = await getCurrentWeekInfo(season);
   const week = weekArg || info.week;
   const ballots = await Ballot.find({ season, week }).lean();
@@ -1410,7 +1424,7 @@ async function sendWeeklyRecap(season = 2025, weekArg) {
 cron.schedule('0 * * * *', async () => {
   try {
     const cfg = await loadEmailConfig();
-    if (cfg.remindersEnabled) await sendDeadlineReminders(2025);
+    if (cfg.remindersEnabled) await sendDeadlineReminders(CURRENT_SEASON);
   } catch (e) { console.error('[email] reminder sweep failed:', e.message); }
 }, { timezone: 'America/Los_Angeles' });
 
@@ -1440,19 +1454,19 @@ app.post('/api/email/test', requireAdmin, async (req, res) => {
 });
 
 app.post('/api/email/send-reminders', requireAdmin, async (req, res) => {
-  try { res.json({ ok: true, ...(await sendDeadlineReminders(2025, { force: !!req.body?.force })) }); }
+  try { res.json({ ok: true, ...(await sendDeadlineReminders(CURRENT_SEASON, { force: !!req.body?.force })) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/email/send-recap', requireAdmin, async (req, res) => {
-  try { res.json({ ok: true, ...(await sendWeeklyRecap(2025, req.body?.week ? Number(req.body.week) : undefined)) }); }
+  try { res.json({ ok: true, ...(await sendWeeklyRecap(CURRENT_SEASON, req.body?.week ? Number(req.body.week) : undefined)) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/email/remind-voter — nudge a single voter, ignoring the lead-time
 // window (used by the ballot completion panel's per-voter "Nudge" button).
 app.post('/api/email/remind-voter', requireAdmin, async (req, res) => {
-  const { userId, week, season = 2025 } = req.body || {};
+  const { userId, week, season = CURRENT_SEASON } = req.body || {};
   if (!userId || !week) return res.status(400).json({ error: 'Missing userId or week' });
   const user = await User.findById(userId).lean();
   if (!user?.email) return res.status(404).json({ error: 'Voter has no email on file' });
@@ -1465,11 +1479,11 @@ app.post('/api/email/remind-voter', requireAdmin, async (req, res) => {
 // ---- Schedule API ----
 app.get('/api/schedule', requireAdmin, async (req, res) => {
   const config = await loadSchedule();
-  res.json({ config: config || { enabled: false, cronExpr: '', day: 'tuesday', hour: 6, minute: 0, year: 2025 }, running: !!scheduledTask, log: scheduleLog.slice(-20) });
+  res.json({ config: config || { enabled: false, cronExpr: '', day: 'tuesday', hour: 6, minute: 0, year: CURRENT_SEASON }, running: !!scheduledTask, log: scheduleLog.slice(-20) });
 });
 
 app.post('/api/schedule', requireAdmin, async (req, res) => {
-  const { enabled, day, hour, minute, year = 2025 } = req.body;
+  const { enabled, day, hour, minute, year = CURRENT_SEASON } = req.body;
   const DAYS = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
   const dayNum = DAYS[(day || 'tuesday').toLowerCase()];
   if (dayNum === undefined) return res.status(400).json({ error: 'Invalid day' });
@@ -1484,7 +1498,7 @@ app.post('/api/schedule', requireAdmin, async (req, res) => {
 });
 
 app.post('/api/schedule/run-now', requireAdmin, async (req, res) => {
-  const year = Number(req.body?.year || 2025);
+  const year = Number(req.body?.year || CURRENT_SEASON);
   res.json({ ok: true, message: 'Download started' });
   runScheduledDownload(year);
 });
@@ -1533,7 +1547,7 @@ async function computeWeeklyRankings(year) {
 }
 
 app.get('/api/rankings/weekly', async (req, res) => {
-  const year = String(req.query.year || '2025');
+  const year = String(req.query.year || CURRENT_SEASON);
 
   try {
     if (!weeklyCache.has(year)) {
@@ -1616,7 +1630,7 @@ async function getFinalAPTop25(year, teamsRaw) {
 }
 
 app.get('/api/teams/resumes', async (req, res) => {
-  const year = String(req.query.season || req.query.year || '2025');
+  const year = String(req.query.season || req.query.year || CURRENT_SEASON);
   try {
     const cached = resumeCache.get(year);
     if (cached && Date.now() - cached.at < 10 * 60 * 1000) return res.json(cached.data);
@@ -1660,7 +1674,7 @@ async function computeCustomRanking(season, weights, advanced) {
 
 // Live preview — compute a ranking from candidate weights without saving.
 app.post('/api/custom-polls/preview', requireAuth, async (req, res) => {
-  const season = Number(req.body.season || 2025);
+  const season = Number(req.body.season || CURRENT_SEASON);
   const weights = sanitizeWeights(req.body.weights);
   const advanced = sanitizeAdvanced(req.body.advanced);
   if (!weights) return res.status(400).json({ error: 'At least one weight must be greater than 0' });
@@ -1716,7 +1730,7 @@ app.post('/api/custom-polls/backtest', requireAuth, async (req, res) => {
 });
 
 app.post('/api/custom-polls', writeLimiter, requireAuth, async (req, res) => {
-  const season = Number(req.body.season || 2025);
+  const season = Number(req.body.season || CURRENT_SEASON);
   const name = (req.body.name || '').trim().slice(0, 60);
   const weights = sanitizeWeights(req.body.weights);
   const advanced = sanitizeAdvanced(req.body.advanced);
@@ -1732,7 +1746,7 @@ app.post('/api/custom-polls', writeLimiter, requireAuth, async (req, res) => {
 });
 
 app.get('/api/custom-polls/mine', requireAuth, async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const polls = await CustomPoll.find({ userId: req.user.id, season }).sort({ updatedAt: -1 }).lean();
   res.json({ polls });
 });
@@ -1760,7 +1774,7 @@ cron.schedule('30 5 * * *', async () => {
 // Public gallery of polls their owners have chosen to publish/share.
 // (Registered before the /:id route below so "gallery" doesn't get parsed as an id.)
 app.get('/api/custom-polls/gallery', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const polls = await CustomPoll.find({ published: true, season })
     .sort({ updatedAt: -1 }).limit(50)
     .select('name userName season weights advanced rankings updatedAt').lean();
@@ -1774,7 +1788,7 @@ app.get('/api/custom-polls/gallery', async (req, res) => {
 // tuning can be judged week-to-week, same spirit as the human voter board.
 // (Registered before the /:id route below so "leaderboard" doesn't get parsed as an id.)
 app.get('/api/custom-polls/leaderboard', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   if (!isValidSeason(season)) return res.status(400).json({ error: 'Invalid season' });
   try {
     const [polls, games] = await Promise.all([
@@ -1861,7 +1875,7 @@ app.delete('/api/custom-polls/:id', requireAuth, async (req, res) => {
 app.get('/api/search', async (req, res) => {
   const q = (req.query.q || '').toString().trim().toLowerCase();
   if (q.length < 2) return res.json({ teams: [], voters: [] });
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
 
   const teamsRaw = await readJson(season, 'teams') || [];
   const teams = teamsRaw
@@ -2002,7 +2016,7 @@ async function loadFullSchedule(season) {
 }
 
 app.get('/api/schedule/games', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const week = req.query.week ? Number(req.query.week) : null;
   try {
     let games = await loadFullSchedule(season);
@@ -2015,7 +2029,7 @@ app.get('/api/schedule/games', async (req, res) => {
 });
 
 app.get('/api/picks/games', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   try {
     const info = await getCurrentWeekInfo(season);
     const week = req.query.week ? Number(req.query.week) : info.week;
@@ -2025,7 +2039,7 @@ app.get('/api/picks/games', async (req, res) => {
 });
 
 app.post('/api/picks', writeLimiter, requireAuth, async (req, res) => {
-  const season = Number(req.body.season || 2025);
+  const season = Number(req.body.season || CURRENT_SEASON);
   const week = Number(req.body.week);
   const picks = Array.isArray(req.body.picks) ? req.body.picks : [];
   if (!week || !picks.length) return res.status(400).json({ error: 'Missing week or picks' });
@@ -2054,7 +2068,7 @@ app.post('/api/picks', writeLimiter, requireAuth, async (req, res) => {
 });
 
 app.get('/api/picks/mine', requireAuth, async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const week = Number(req.query.week);
   const picks = await GamePick.find({ userId: req.user.id, season, ...(week ? { week } : {}) }).lean();
   res.json({ picks });
@@ -2062,7 +2076,7 @@ app.get('/api/picks/mine', requireAuth, async (req, res) => {
 
 // Leaderboard: joins every stored pick against that game's real result.
 app.get('/api/picks/leaderboard', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const picks = await GamePick.find({ season, userId: { $not: /^mock_/ } }).lean();
   if (!picks.length) return res.json({ leaderboard: [] });
 
@@ -2091,7 +2105,7 @@ app.get('/api/picks/leaderboard', async (req, res) => {
 
 // ---- CFP / bowl projection (heuristic, computed live off the real Top 25 + conference data) ----
 app.get('/api/cfp-projection', async (req, res) => {
-  const season = String(req.query.season || 2025);
+  const season = String(req.query.season || CURRENT_SEASON);
   try {
     if (!weeklyCache.has(season)) weeklyCache.set(season, await computeWeeklyRankings(season));
     const cache = weeklyCache.get(season);
@@ -2159,7 +2173,7 @@ async function computeHeismanCandidates(season, limit = 15) {
 }
 
 app.get('/api/awards/heisman/candidates', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   try {
     const candidates = await computeHeismanCandidates(season);
     if (!candidates.length) return res.status(400).json({ error: 'No player stats downloaded for this season yet' });
@@ -2168,7 +2182,7 @@ app.get('/api/awards/heisman/candidates', async (req, res) => {
 });
 
 app.post('/api/awards/heisman/vote', writeLimiter, requireAuth, async (req, res) => {
-  const season = Number(req.body.season || 2025);
+  const season = Number(req.body.season || CURRENT_SEASON);
   const { playerName, team } = req.body;
   if (!playerName) return res.status(400).json({ error: 'Missing playerName' });
   const vote = await AwardVote.findOneAndUpdate(
@@ -2180,7 +2194,7 @@ app.post('/api/awards/heisman/vote', writeLimiter, requireAuth, async (req, res)
 });
 
 app.get('/api/awards/heisman/results', async (req, res) => {
-  const season = Number(req.query.season || 2025);
+  const season = Number(req.query.season || CURRENT_SEASON);
   const votes = await AwardVote.find({ season, category: 'heisman' }).lean();
   const tally = new Map();
   for (const v of votes) {
@@ -2212,8 +2226,8 @@ connectDB().then(() => {
 
     setImmediate(async () => {
       try {
-        log('Pre-computing weekly rankings for 2025...');
-        weeklyCache.set('2025', await computeWeeklyRankings('2025'));
+        log(`Pre-computing weekly rankings for ${CURRENT_SEASON}...`);
+        weeklyCache.set(String(CURRENT_SEASON), await computeWeeklyRankings(String(CURRENT_SEASON)));
         log('Weekly rankings cached.');
       } catch (e) {
         log(`Weekly rankings pre-compute failed: ${e.message}`);

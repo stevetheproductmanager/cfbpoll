@@ -4,6 +4,7 @@ import { useAuth } from '../../store/AuthContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import TeamDetailModal from '../../components/TeamDetailModal.jsx'
 import FavoriteStar from '../../components/FavoriteStar.jsx'
+import { CURRENT_SEASON } from '../../lib/season.js'
 import ShareButton from '../../components/ShareButton.jsx'
 
 const BALLOT_KEY = 'pollposition_ballot'
@@ -696,7 +697,7 @@ export default function PublicRankings() {
           background: 'linear-gradient(135deg, var(--brand), var(--accent))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
         }}>Community Rankings</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 8 }}>
-          {data?.totalVoters || 0} voter{data?.totalVoters !== 1 ? 's' : ''} · {data?.season || 2025} Season
+          {data?.totalVoters || 0} voter{data?.totalVoters !== 1 ? 's' : ''} · {data?.season || CURRENT_SEASON} Season
         </p>
         {weekInfo?.current?.deadline && selectedWeek === weekInfo?.current?.week && (
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center' }}>

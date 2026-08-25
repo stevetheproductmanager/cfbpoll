@@ -65,7 +65,7 @@ export function AuthProvider({ children }) {
       const r = await fetch('/api/auth/admin-dev', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'stevetheproductmanager@gmail.com' }),
+        body: JSON.stringify({ email: 'stevetheproductmanager@gmail.com', secret: import.meta.env.VITE_DEV_ADMIN_SECRET }),
       })
       if (!r.ok) throw new Error()
       const data = await r.json()

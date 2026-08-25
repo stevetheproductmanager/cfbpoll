@@ -5,6 +5,7 @@ import { useToast } from '../../store/ToastContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
 import { DEFAULT_ADVANCED as ALGO_DEFAULT_ADVANCED } from '../../lib/rankAlgo.js'
+import { CURRENT_SEASON } from '../../lib/season.js'
 
 const DEFAULT_WEIGHTS = { efficiency: 38, results: 25, sos: 15, quality: 12, momentum: 10, conference: 0 }
 const DEFAULT_ADVANCED = { ...ALGO_DEFAULT_ADVANCED }
@@ -214,7 +215,7 @@ export default function CustomPollBuilder() {
     try {
       const r = await fetch('/api/custom-polls/preview', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ season: 2025, weights, advanced }),
+        body: JSON.stringify({ season: CURRENT_SEASON, weights, advanced }),
       })
       const d = await r.json()
       if (!r.ok) { toast.error(d.error || 'Could not compute rankings'); setLoading(false); return }
@@ -230,7 +231,7 @@ export default function CustomPollBuilder() {
     try {
       const r = await fetch('/api/custom-polls', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ season: 2025, name: name.trim(), weights, advanced }),
+        body: JSON.stringify({ season: CURRENT_SEASON, name: name.trim(), weights, advanced }),
       })
       const d = await r.json()
       if (!r.ok) { toast.error(d.error || 'Could not save poll'); setSaving(false); return }
@@ -427,7 +428,7 @@ export default function CustomPollBuilder() {
             <div className="card" style={{ marginTop: 0, padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0 }}>Your Computer Top 25</h3>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>2025 season data</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{CURRENT_SEASON} season data</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {result.rankings.map((t, i) => {

@@ -59,10 +59,18 @@ export default function makeAuthRouter() {
   });
 
   // DEV ONLY — admin backdoor, locked to the one real admin account.
-  // Disabled entirely in production (NODE_ENV check) as a second layer.
+  // Two independent gates, either of which alone disables it: NODE_ENV must
+  // not be 'production', AND the caller must know DEV_ADMIN_SECRET (set only
+  // in local .env, never in prod config) — so a NODE_ENV misconfiguration on
+  // a review app or staging dyno can't turn this into "just email in the
+  // owner's address and get an admin token."
   const DEV_ADMIN_EMAIL = 'stevetheproductmanager@gmail.com';
   router.post('/admin-dev', async (req, res) => {
     if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'Not found' });
+    if (!process.env.DEV_ADMIN_SECRET) return res.status(404).json({ error: 'Not found' });
+    if (req.body?.secret !== process.env.DEV_ADMIN_SECRET) {
+      return res.status(403).json({ error: 'Invalid dev admin secret' });
+    }
     if (req.body?.email !== DEV_ADMIN_EMAIL) {
       return res.status(403).json({ error: 'Dev admin login is locked to the owner account' });
     }

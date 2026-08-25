@@ -1,5 +1,6 @@
+import { CURRENT_SEASON } from '../lib/season.js';
 
-export async function getManifest(year = 2025) {
+export async function getManifest(year = CURRENT_SEASON) {
   const res = await fetch(`/api/data/manifest?year=${year}`);
   if (!res.ok) throw new Error(`Manifest HTTP ${res.status}`);
   const j = await res.json();

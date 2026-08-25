@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import TeamScoreLine from '../../components/TeamScoreLine.jsx'
-
-const SEASON = 2025
+import { CURRENT_SEASON as SEASON } from '../../lib/season.js'
 
 function fmtDate(iso) {
   if (!iso) return 'Date TBD'

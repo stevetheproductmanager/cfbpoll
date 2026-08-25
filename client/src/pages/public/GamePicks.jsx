@@ -81,7 +81,9 @@ export default function GamePicks() {
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 16 }}>
-        {[week - 1, week, week + 1].filter(w => w >= 1).map(w => (
+        {/* /api/picks/games doesn't return a season-week list to bound against,
+            so cap at 20 — comfortably past the postseason (CFB runs to ~17). */}
+        {[week - 1, week, week + 1].filter(w => w >= 1 && w <= 20).map(w => (
           <button key={w} className={`tab${week === w ? ' active' : ''}`} onClick={() => setWeek(w)}>
             Week {w}{w === gamesData?.currentWeek ? ' (current)' : ''}
           </button>
