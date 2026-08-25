@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { TeamLogo } from '../hooks/useTeamLogos.jsx'
 
 function RankHistory({ history }) {
@@ -55,6 +56,7 @@ export default function TeamDetailModal({ name, resume, week, onClose, onTeam })
               {resume ? `${resume.conference} · ${resume.record} · Computer #${resume.rank}${resume.sosRank ? ` · SOS #${resume.sosRank}` : ''}` : 'Loading…'}
             </div>
           </div>
+          <Link to={`/team/${encodeURIComponent(name)}`} style={{ fontSize: 11, fontWeight: 600, color: 'var(--brand2)', whiteSpace: 'nowrap' }} title="Open full team page">Full page →</Link>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>✕</button>
         </div>
 

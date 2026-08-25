@@ -9,6 +9,7 @@ const FEATURES = [
   { icon: '📊', title: 'Live Consensus', desc: 'See how the community ranks every team in real time. Watch the rankings shift as votes pour in.', to: '/rankings' },
   { icon: '🏆', title: 'Voter Leaderboard', desc: 'See who nails the consensus and who goes bold. Your accuracy is tracked all season.', to: '/leaderboard' },
   { icon: '📈', title: 'Visual Poll', desc: 'Explore the rankings as tiers, cards, or bubbles. Track movement week over week.', to: '/visual' },
+  { icon: '⚙️', title: 'Build a Computer Poll', desc: 'Design your own ranking algorithm with sliders, compute a live Top 25, and save it as your own poll.', to: '/custom-poll' },
 ]
 
 function LiveCountdown({ deadline }) {
@@ -75,6 +76,49 @@ function YourTeamsPanel() {
               </div>
             )
           })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BiggestMovers() {
+  const [consensus, setConsensus] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/weeks').then(r => r.json()).then(w => {
+      const week = w.current?.week
+      if (!week) return
+      fetch(`/api/ballots/consensus?week=${week}`).then(r => r.json()).then(setConsensus).catch(() => {})
+    }).catch(() => {})
+  }, [])
+
+  const movers = useMemo(() => {
+    const rankings = consensus?.rankings || []
+    return rankings.filter(t => t.movement).sort((a, b) => Math.abs(b.movement) - Math.abs(a.movement)).slice(0, 5)
+  }, [consensus])
+
+  if (!movers.length) return null
+
+  return (
+    <div style={{ maxWidth: 800, margin: '0 auto 32px', padding: '0 24px' }}>
+      <div className="card" style={{ marginTop: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h3 style={{ fontSize: 15, margin: 0 }}>📈 Biggest Movers — Week {consensus.week}</h3>
+          <Link to="/rankings" style={{ fontSize: 12, fontWeight: 600 }}>See all →</Link>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {movers.map(t => (
+            <div key={t.team} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              <span style={{ fontWeight: 800, color: 'var(--brand2)', minWidth: 24, textAlign: 'right' }}>#{t.rank}</span>
+              <TeamLogo name={t.team} size={22} />
+              <span style={{ fontWeight: 600, flex: 1 }}>{t.team}</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>was #{t.prevRank}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: t.movement > 0 ? 'var(--ok)' : 'var(--err)' }}>
+                {t.movement > 0 ? '▲' : '▼'}{Math.abs(t.movement)}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -198,6 +242,7 @@ export default function Landing() {
       {/* Live dashboard */}
       <DashboardCard dashboard={dashboard} />
       <YourTeamsPanel />
+      <BiggestMovers />
 
       {/* Features */}
       <div style={{

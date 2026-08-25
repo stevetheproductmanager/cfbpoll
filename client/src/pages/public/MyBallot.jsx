@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useAuth } from '../../store/AuthContext.jsx'
 import { useToast } from '../../store/ToastContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
-import { Navigate } from 'react-router-dom'
+import { Navigate, Link } from 'react-router-dom'
 import TeamDetailModal from '../../components/TeamDetailModal.jsx'
 import FavoriteStar from '../../components/FavoriteStar.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
 
 const BALLOT_KEY = 'pollposition_ballot'
+const BALLOT_TYPE_KEY = 'pollposition_ballot_type'
 const MAX_PICKS = 25
 
 const FBS_TEAMS = [
@@ -231,11 +232,21 @@ export default function MyBallot() {
   const [confirmAction, setConfirmAction] = useState(null)
   const [resumes, setResumes] = useState(null)
   const [detailTeam, setDetailTeam] = useState(null)
+  const [ballotType, setBallotType] = useState(() => {
+    try { return localStorage.getItem(BALLOT_TYPE_KEY) === 'computer' ? 'computer' : 'human' } catch { return 'human' }
+  })
+  const [myCustomPolls, setMyCustomPolls] = useState([])
+  const [customPollId, setCustomPollId] = useState(null)
   const searchRef = useRef(null)
   const dragState = useRef(null)
 
   useEffect(() => { fetch('/api/weeks').then(r => r.json()).then(setWeekInfo).catch(() => {}) }, [])
   useEffect(() => { fetch('/api/teams/resumes').then(r => r.json()).then(d => { if (!d.error) setResumes(d) }).catch(() => {}) }, [])
+  useEffect(() => {
+    if (!user) return
+    fetch('/api/custom-polls/mine', { headers: authHeaders() }).then(r => r.json()).then(d => setMyCustomPolls(d.polls || [])).catch(() => {})
+  }, [user])
+  useEffect(() => { try { localStorage.setItem(BALLOT_TYPE_KEY, ballotType) } catch {} }, [ballotType])
 
   useEffect(() => {
     const wk = weekInfo?.current?.week
@@ -259,7 +270,7 @@ export default function MyBallot() {
     fetch(`/api/ballots?week=${weekInfo.current.week}`).then(r => r.json()).then(ballots => {
       const arr = Array.isArray(ballots) ? ballots : ballots.ballots || []
       const mine = arr.find(b => b.userId === user.id)
-      if (mine) { setBallot(mine.rankings); setSubmitted(true) }
+      if (mine) { setBallot(mine.rankings); setSubmitted(true); if (mine.ballotType) setBallotType(mine.ballotType) }
       else if (prevBallot && ballot.length === 0) {
         setBallot(prevBallot)
         toast.info('Pre-filled from your last week\'s ballot')
@@ -352,13 +363,14 @@ export default function MyBallot() {
   }
   const onHandleUp = () => { dragState.current = null; setDragIdx(null) }
 
-  const applyPreset = (list, label) => {
+  const applyPreset = (list, label, presetCustomPollId) => {
     const clean = (list || []).filter(Boolean).slice(0, MAX_PICKS)
     if (!clean.length) { toast.error(`No ${label} data available`); return }
     if (ballot.length > 0) {
-      setConfirmAction({ type: 'preset', list: clean, label })
+      setConfirmAction({ type: 'preset', list: clean, label, customPollId: presetCustomPollId || null })
     } else {
       setBallot(clean)
+      if (presetCustomPollId) { setBallotType('computer'); setCustomPollId(presetCustomPollId) }
       toast.success(`Loaded ${label}`)
     }
   }
@@ -370,7 +382,7 @@ export default function MyBallot() {
       const r = await fetch('/api/ballots', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ rankings: ballot }),
+        body: JSON.stringify({ rankings: ballot, ballotType, customPollId: ballotType === 'computer' ? customPollId : null }),
       })
       const body = await r.json()
       if (!r.ok) { toast.error(body.error || 'Failed to submit ballot'); return }
@@ -402,6 +414,10 @@ export default function MyBallot() {
     { key: 'last', label: "Last Week's Consensus", list: () => (lastWeek?.rankings || []).slice(0, 25).map(t => t.team) },
     { key: 'computer', label: 'Computer Model', list: () => resumes?.presets?.computer || [] },
     { key: 'ap', label: 'AP Poll', list: () => resumes?.presets?.ap || [] },
+    ...myCustomPolls.map(p => ({
+      key: `custom-${p._id}`, label: `My "${p.name}"`,
+      list: () => (p.rankings || []).map(r => r.team), customPollId: p._id,
+    })),
   ]
 
   return (
@@ -432,12 +448,37 @@ export default function MyBallot() {
         </p>
       </div>
 
+      {/* Human vs Computer ballot type */}
+      {!locked && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <div style={{ display: 'inline-flex', background: 'var(--panel-2)', border: '1px solid var(--border-strong)', borderRadius: 10, padding: 3, gap: 2 }}>
+            {[{ key: 'human', label: '🧑 Human Ballot' }, { key: 'computer', label: '🖥️ Computer Ballot' }].map(o => (
+              <button key={o.key} onClick={() => setBallotType(o.key)}
+                className={o.key === ballotType ? 'btn btn-primary' : 'btn btn-ghost'}
+                style={{ fontSize: 12, padding: '6px 14px', border: 'none' }}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {locked && (
+        <div style={{ textAlign: 'center', marginBottom: 8 }}>
+          <span className="badge" style={{ fontSize: 11 }}>{ballotType === 'computer' ? '🖥️ Computer Ballot' : '🧑 Human Ballot'}</span>
+        </div>
+      )}
+      {ballotType === 'computer' && !locked && (
+        <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--muted)', marginTop: -10, marginBottom: 16 }}>
+          Marked as a computer-generated ballot — load one of your <Link to="/custom-poll" style={{ color: 'var(--brand2)' }}>custom polls</Link> below or use Computer Model in Smart Start.
+        </p>
+      )}
+
       {/* Smart start */}
       {!locked && (
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
           <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>Smart start:</span>
           {PRESETS.map(p => (
-            <button key={p.key} className="btn btn-ghost" onClick={() => applyPreset(p.list(), p.label)}
+            <button key={p.key} className="btn btn-ghost" onClick={() => applyPreset(p.list(), p.label, p.customPollId)}
               style={{ fontSize: 12, padding: '5px 12px', border: '1px solid var(--border-strong)' }}>
               {p.label}
             </button>
@@ -615,7 +656,12 @@ export default function MyBallot() {
           title={`Load ${confirmAction.label}?`}
           message={`This will replace your current ballot with ${confirmAction.label}. You can still reorder and edit afterward.`}
           confirmLabel="Replace Ballot"
-          onConfirm={() => { setBallot(confirmAction.list); setConfirmAction(null); toast.success(`Loaded ${confirmAction.label}`) }}
+          onConfirm={() => {
+            setBallot(confirmAction.list)
+            if (confirmAction.customPollId) { setBallotType('computer'); setCustomPollId(confirmAction.customPollId) }
+            setConfirmAction(null)
+            toast.success(`Loaded ${confirmAction.label}`)
+          }}
           onCancel={() => setConfirmAction(null)}
         />
       )}

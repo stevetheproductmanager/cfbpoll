@@ -6,6 +6,8 @@ const ballotSchema = new mongoose.Schema({
   season: { type: Number, required: true },
   week: { type: Number, required: true },
   rankings: [{ type: String }],
+  ballotType: { type: String, enum: ['human', 'computer'], default: 'human' },
+  customPollId: { type: String, default: null }, // if ballotType==='computer' and derived from a saved custom poll
   submittedAt: { type: Date, default: Date.now },
 });
 

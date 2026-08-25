@@ -25,6 +25,7 @@ import Ballot from './models/Ballot.js';
 import CfbdData from './models/CfbdData.js';
 import User from './models/User.js';
 import AdminAction from './models/AdminAction.js';
+import CustomPoll from './models/CustomPoll.js';
 import cron from 'node-cron';
 import { sendEmail, getEmailLog, deadlineReminderEmail, weeklyRecapEmail } from './email.js';
 
@@ -378,6 +379,16 @@ async function ensureWeekExists(season = 2025) {
   }
 }
 
+// Every ballot before this feature shipped predates the ballotType field, so
+// it's simply absent (not 'human') on those documents. Treat "missing" as
+// human — they were all cast by people — so old ballots stay counted under
+// the Human filter instead of silently vanishing from consensus/leaderboards.
+function ballotTypeFilter(type) {
+  if (type === 'computer') return { ballotType: 'computer' };
+  if (type === 'human') return { $or: [{ ballotType: 'human' }, { ballotType: { $exists: false } }, { ballotType: null }] };
+  return {};
+}
+
 function computeConsensus(ballots) {
   if (!ballots.length) return [];
   const points = new Map(), appearances = new Map(), rankDist = new Map();
@@ -573,15 +584,16 @@ app.get('/api/ballots', async (req, res) => {
   const filter = { season };
   if (week) filter.week = week;
   if (req.query.includeMock !== 'true') filter.userId = { $not: /^mock_/ };
-  const ballots = await Ballot.find(filter).lean();
+  const ballots = await Ballot.find({ ...filter, ...ballotTypeFilter(req.query.type) }).lean();
   res.json(ballots);
 });
 
 // POST /api/ballots
 app.post('/api/ballots', ballotWriteLimiter, requireAuth, async (req, res) => {
-  const { rankings, season = 2025 } = req.body;
+  const { rankings, season = 2025, ballotType, customPollId } = req.body;
   const userId = req.user.id;
   const userName = req.user.name;
+  const type = ballotType === 'computer' ? 'computer' : 'human';
 
   const account = await User.findById(userId).lean();
   if (account?.banned) return res.status(403).json({ error: 'Your voting privileges have been suspended' });
@@ -597,7 +609,11 @@ app.post('/api/ballots', ballotWriteLimiter, requireAuth, async (req, res) => {
 
   const ballot = await Ballot.findOneAndUpdate(
     { userId, season, week: info.week },
-    { userId, userName: userName || 'Anonymous', rankings: rankings.slice(0, settings.maxBallotSize), season, week: info.week, submittedAt: new Date() },
+    {
+      userId, userName: userName || 'Anonymous', rankings: rankings.slice(0, settings.maxBallotSize), season, week: info.week,
+      ballotType: type, customPollId: type === 'computer' ? (customPollId || null) : null,
+      submittedAt: new Date(),
+    },
     { upsert: true, new: true }
   );
   res.json({ ok: true, ballot });
@@ -637,11 +653,12 @@ app.get('/api/ballots/consensus', async (req, res) => {
   const season = Number(req.query.season || 2025);
   const info = await getCurrentWeekInfo(season);
   const week = Number(req.query.week) || info.week;
+  const typeFilter = ballotTypeFilter(req.query.type);
 
-  const weekBallots = await Ballot.find({ season, week }).lean();
+  const weekBallots = await Ballot.find({ season, week, ...typeFilter }).lean();
   const rankings = computeConsensus(weekBallots);
 
-  const prevBallots = await Ballot.find({ season, week: week - 1 }).lean();
+  const prevBallots = await Ballot.find({ season, week: week - 1, ...typeFilter }).lean();
   const prevRankings = computeConsensus(prevBallots);
   const prevMap = new Map();
   prevRankings.forEach(t => prevMap.set(t.team, t.rank));
@@ -1310,6 +1327,91 @@ app.get('/api/teams/resumes', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ---- Custom Computer Polls — user-tunable ranking engine ----
+// Reuses the same underlying game/efficiency data as the site's official
+// computer model (rankAlgo.js), just with user-chosen component weights.
+async function computeCustomRanking(season, weights) {
+  const teamsRaw = await readJson(Number(season), 'teams');
+  const gamesRaw = await readJson(Number(season), 'games-regular');
+  const spRaw = await readJson(Number(season), 'sp-ratings') || [];
+  if (!teamsRaw || !gamesRaw) throw new Error(`No CFBD data for season ${season} — an admin needs to download it first`);
+  const ranked = rankTeams({ teamsRaw, gamesRaw, spRaw, weights });
+  return ranked.slice(0, 25).map(t => ({
+    team: t.name, rank: t.rank, score: +((t.score || 0).toFixed(4)),
+    record: `${t.w}-${t.l}`, conference: t.conference,
+  }));
+}
+
+function sanitizeWeights(w) {
+  const keys = ['efficiency', 'results', 'sos', 'quality', 'momentum'];
+  const out = {};
+  for (const k of keys) out[k] = Math.max(0, Math.min(1, Number(w?.[k]) || 0));
+  if (Object.values(out).every(v => v === 0)) return null;
+  return out;
+}
+
+// Live preview — compute a ranking from candidate weights without saving.
+app.post('/api/custom-polls/preview', requireAuth, async (req, res) => {
+  const season = Number(req.body.season || 2025);
+  const weights = sanitizeWeights(req.body.weights);
+  if (!weights) return res.status(400).json({ error: 'At least one weight must be greater than 0' });
+  try {
+    const rankings = await computeCustomRanking(season, weights);
+    res.json({ season, weights, rankings });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/custom-polls', requireAuth, async (req, res) => {
+  const season = Number(req.body.season || 2025);
+  const name = (req.body.name || '').trim().slice(0, 60);
+  const weights = sanitizeWeights(req.body.weights);
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  if (!weights) return res.status(400).json({ error: 'At least one weight must be greater than 0' });
+  try {
+    const rankings = await computeCustomRanking(season, weights);
+    const poll = await CustomPoll.create({ userId: req.user.id, userName: req.user.name || 'Anonymous', name, season, weights, rankings });
+    res.json({ ok: true, poll });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/custom-polls/mine', requireAuth, async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const polls = await CustomPoll.find({ userId: req.user.id, season }).sort({ updatedAt: -1 }).lean();
+  res.json({ polls });
+});
+
+// Public — lets a saved poll be viewed/shared without auth.
+app.get('/api/custom-polls/:id', async (req, res) => {
+  const poll = await CustomPoll.findById(req.params.id).lean().catch(() => null);
+  if (!poll) return res.status(404).json({ error: 'Poll not found' });
+  res.json({ poll });
+});
+
+app.post('/api/custom-polls/:id/recompute', requireAuth, async (req, res) => {
+  const poll = await CustomPoll.findById(req.params.id);
+  if (!poll) return res.status(404).json({ error: 'Poll not found' });
+  if (poll.userId !== req.user.id) return res.status(403).json({ error: 'Not your poll' });
+  try {
+    poll.rankings = await computeCustomRanking(poll.season, poll.weights);
+    await poll.save();
+    res.json({ ok: true, poll });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/custom-polls/:id', requireAuth, async (req, res) => {
+  const poll = await CustomPoll.findById(req.params.id).lean();
+  if (!poll) return res.status(404).json({ error: 'Poll not found' });
+  if (poll.userId !== req.user.id) return res.status(403).json({ error: 'Not your poll' });
+  await CustomPoll.deleteOne({ _id: req.params.id });
+  res.json({ ok: true });
 });
 
 // Serve static client build for production (Heroku)

@@ -14,6 +14,10 @@ import Leaderboard from './pages/public/Leaderboard.jsx'
 import VisualPoll from './pages/public/VisualPoll.jsx'
 import BallotHistory from './pages/public/BallotHistory.jsx'
 import Legal from './pages/public/Legal.jsx'
+import CustomPollBuilder from './pages/public/CustomPollBuilder.jsx'
+import CustomPollView from './pages/public/CustomPollView.jsx'
+import TeamPage from './pages/public/TeamPage.jsx'
+import Methodology from './pages/public/Methodology.jsx'
 
 // Admin pages
 import DataDownload from './pages/DataDownload.jsx'
@@ -135,6 +139,10 @@ export default function App() {
             <Route path="history" element={<BallotHistory />} />
             <Route path="login" element={<Login />} />
             <Route path="legal" element={<Legal />} />
+            <Route path="custom-poll" element={<CustomPollBuilder />} />
+            <Route path="custom-poll/:id" element={<CustomPollView />} />
+            <Route path="team/:name" element={<TeamPage />} />
+            <Route path="methodology" element={<Methodology />} />
           </Route>
 
           {/* Admin */}

@@ -611,6 +611,7 @@ export default function PublicRankings() {
   const [selectedWeek, setSelectedWeek] = useState(null)
   const [resumes, setResumes] = useState(null)
   const [detailTeam, setDetailTeam] = useState(null)
+  const [ballotFilter, setBallotFilter] = useState('all') // all | human | computer
 
   useEffect(() => { fetch('/api/teams/resumes').then(r => r.json()).then(d => { if (!d.error) setResumes(d) }).catch(() => {}) }, [])
 
@@ -627,17 +628,18 @@ export default function PublicRankings() {
     } catch {}
   }, [selectedWeek])
 
-  const loadData = useCallback(async (week) => {
+  const loadData = useCallback(async (week, type) => {
     setLoading(true)
     try {
-      const r = await fetch(`/api/ballots/consensus?week=${week}`)
+      const q = type && type !== 'all' ? `&type=${type}` : ''
+      const r = await fetch(`/api/ballots/consensus?week=${week}${q}`)
       setData(await r.json())
     } catch {}
     setLoading(false)
   }, [])
 
   useEffect(() => { loadWeeks() }, [])
-  useEffect(() => { if (selectedWeek !== null) loadData(selectedWeek) }, [selectedWeek])
+  useEffect(() => { if (selectedWeek !== null) loadData(selectedWeek, ballotFilter) }, [selectedWeek, ballotFilter])
 
   const top25 = useMemo(() => data?.rankings?.slice(0, 25) || [], [data])
   const receiving = useMemo(() => data?.rankings?.slice(25) || [], [data])
@@ -706,6 +708,19 @@ export default function PublicRankings() {
           />
         </div>
       )}
+
+      {/* Human vs Computer ballot filter */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'inline-flex', background: 'var(--panel-2)', border: '1px solid var(--border-strong)', borderRadius: 10, padding: 3, gap: 2 }}>
+          {[{ key: 'all', label: 'All Ballots' }, { key: 'human', label: '🧑 Human' }, { key: 'computer', label: '🖥️ Computer' }].map(o => (
+            <button key={o.key} onClick={() => setBallotFilter(o.key)}
+              className={o.key === ballotFilter ? 'btn btn-primary' : 'btn btn-ghost'}
+              style={{ fontSize: 11, padding: '5px 12px', border: 'none' }}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>

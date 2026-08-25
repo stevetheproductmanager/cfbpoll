@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: '/rankings', label: 'Rankings' },
   { to: '/visual', label: 'Visual Poll' },
   { to: '/leaderboard', label: 'Leaderboard' },
+  { to: '/custom-poll', label: 'Computer Poll' },
   { to: '/ballot', label: 'My Ballot', auth: true },
   { to: '/admin', label: 'Admin', admin: true },
 ]

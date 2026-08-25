@@ -338,8 +338,11 @@ function toPercentiles(arr, higherIsBetter=true){
   return result;
 }
 
+/** Default component weights for the built-in computer poll (must sum to 1). */
+export const DEFAULT_WEIGHTS = { efficiency: 0.38, results: 0.25, sos: 0.15, quality: 0.12, momentum: 0.10 };
+
 /** ---------------- Main ranking (ALL teams internally; filter to FBS at the end) ---------------- **/
-export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [] }) {
+export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = null }) {
   const teamsMap = new Map();
   const { meta, byId, byName } = buildTeamsIndex(teamsRaw);
 
@@ -423,6 +426,17 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [] }) {
 
   const prior = indexSP(spRaw, { byName });
 
+  // Component weights — defaults match the site's official computer poll;
+  // callers (e.g. user-built custom polls) can override any subset. Whatever
+  // is passed is renormalized to sum to 1 so a poll can't cheat its total.
+  const wRaw = { ...DEFAULT_WEIGHTS, ...(weights || {}) };
+  const wSum = Object.values(wRaw).reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+  const wEFF = (wRaw.efficiency || 0) / wSum;
+  const wRES = (wRaw.results || 0) / wSum;
+  const wSOS = (wRaw.sos || 0) / wSum;
+  const wQLT = (wRaw.quality || 0) / wSum;
+  const wMOM = (wRaw.momentum || 0) / wSum;
+
   // First pass scoring for quality second-pass calibration
   const scoreTeam = (t) => {
     const gp = t.games.length;
@@ -440,12 +454,6 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [] }) {
 
     const perfBlend = 0.25 + 0.20 * seasonProgress;
     const efficiency = (1 - perfBlend) * rawEfficiency + perfBlend * clamp(perf * 0.5 + 0.5, 0, 1);
-
-    const wEFF = 0.38;
-    const wRES = 0.25;
-    const wSOS = 0.15;
-    const wQLT = 0.12;
-    const wMOM = 0.10;
 
     let core =
         wEFF * efficiency +

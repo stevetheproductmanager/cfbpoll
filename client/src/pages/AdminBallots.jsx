@@ -118,6 +118,7 @@ export default function AdminBallots() {
                     <td style={{ padding: '10px 6px', fontWeight: 600 }}>
                       {outlierIds.has(b._id) && <span title="Flagged as an outlier vs. consensus" style={{ marginRight: 6 }}>⚠</span>}
                       {b.userName}{String(b.userId).startsWith('mock_') && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--muted)' }}>(mock)</span>}
+                      <span title={b.ballotType === 'computer' ? 'Computer ballot' : 'Human ballot'} style={{ marginLeft: 6, fontSize: 11 }}>{b.ballotType === 'computer' ? '🖥️' : '🧑'}</span>
                     </td>
                     <td style={{ padding: '10px 6px' }}>Week {b.week}</td>
                     <td style={{ padding: '10px 6px', fontSize: 12, color: 'var(--text-secondary)' }}>{new Date(b.submittedAt).toLocaleString()}</td>

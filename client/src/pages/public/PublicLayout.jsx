@@ -93,7 +93,8 @@ export default function PublicLayout() {
           </LogoProvider>
         </FavoritesProvider>
       )}
-      <footer style={{ textAlign: 'center', padding: '20px 16px 32px', fontSize: 12, color: 'var(--muted)' }}>
+      <footer style={{ textAlign: 'center', padding: '20px 16px 32px', fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <Link to="/methodology" style={{ color: 'var(--muted)' }}>How Rankings Work</Link>
         <Link to="/legal" style={{ color: 'var(--muted)' }}>Terms &amp; Privacy</Link>
       </footer>
     </>

@@ -2,6 +2,21 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
+import ShareButton from '../../components/ShareButton.jsx'
+
+// Consecutive weeks voted, counting backward from the most recent week that
+// had any ballots at all — a missed latest week breaks the streak.
+function computeStreak(weekDetail, allWeeks) {
+  if (!weekDetail?.length || !allWeeks?.length) return 0
+  const voted = new Set(weekDetail.map(w => w.week))
+  const weekNums = allWeeks.map(w => w.week).sort((a, b) => b - a)
+  let streak = 0
+  for (const wk of weekNums) {
+    if (voted.has(wk)) streak++
+    else break
+  }
+  return streak
+}
 
 function MovementBadge({ movement }) {
   if (!movement) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
@@ -23,6 +38,7 @@ export default function BallotHistory() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedWeek, setSelectedWeek] = useState(null)
+  const [leaderboard, setLeaderboard] = useState(null)
 
   const targetId = userId || user?.id
   const isMe = user?.id === targetId
@@ -34,7 +50,16 @@ export default function BallotHistory() {
       if (d.weeks?.length) setSelectedWeek(d.weeks[d.weeks.length - 1].week)
       setLoading(false)
     }).catch(() => setLoading(false))
+    fetch('/api/ballots/leaderboard').then(r => r.json()).then(setLeaderboard).catch(() => {})
   }, [targetId])
+
+  const voterStats = useMemo(() => {
+    const v = leaderboard?.voters?.find(v => v.userId === targetId)
+    if (!v) return null
+    const streak = computeStreak(v.weekDetail, leaderboard.weeks)
+    const accuracyPct = Math.round((v.avgAlignment / 25) * 100)
+    return { ...v, streak, accuracyPct }
+  }, [leaderboard, targetId])
 
   const weekData = useMemo(() => data?.weeks?.find(w => w.week === selectedWeek), [data, selectedWeek])
 
@@ -76,17 +101,25 @@ export default function BallotHistory() {
         }}>{isMe ? 'Your' : `${data.userName}'s`} Ballot History</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
           {data.weeks.length} week{data.weeks.length !== 1 ? 's' : ''} of picks
+          {voterStats?.streak >= 3 && <span style={{ marginLeft: 8, color: 'var(--warn)', fontWeight: 700 }}>🔥 {voterStats.streak}-week streak</span>}
         </p>
       </div>
 
-      {/* Back to leaderboard */}
-      <div style={{ marginBottom: 12 }}>
+      {/* Back to leaderboard + share */}
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Link to="/leaderboard" style={{ fontSize: 13, color: 'var(--brand2)' }}>← Back to Leaderboard</Link>
+        <ShareButton title={`${data.userName}'s Ballot History`} text={`Check out ${isMe ? 'my' : `${data.userName}'s`} Top 25 ballots on Poll Position`} />
       </div>
 
       {/* KPI tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 16 }}>
         <div className="kpi"><div className="kpi-label">Weeks Voted</div><div className="kpi-value">{data.weeks.length}</div></div>
+        {voterStats && (
+          <>
+            <div className="kpi"><div className="kpi-label">Accuracy vs Consensus</div><div className="kpi-value">{voterStats.accuracyPct}%</div></div>
+            <div className="kpi"><div className="kpi-label">Leaderboard Rank</div><div className="kpi-value">#{voterStats.rank}</div></div>
+          </>
+        )}
         <div className="kpi"><div className="kpi-label">Unique Teams</div><div className="kpi-value">{new Set(data.weeks.flatMap(w => w.picks)).size}</div></div>
         <div className="kpi"><div className="kpi-label">Most Consistent</div><div className="kpi-value" style={{ fontSize: 14 }}>{getMostConsistent(data.weeks)}</div></div>
         <div className="kpi"><div className="kpi-label">Biggest Mover</div><div className="kpi-value" style={{ fontSize: 14 }}>{getBiggestMover(data.weeks)}</div></div>
