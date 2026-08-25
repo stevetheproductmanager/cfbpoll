@@ -13,6 +13,7 @@ import PublicRankings from './pages/public/PublicRankings.jsx'
 import Leaderboard from './pages/public/Leaderboard.jsx'
 import VisualPoll from './pages/public/VisualPoll.jsx'
 import BallotHistory from './pages/public/BallotHistory.jsx'
+import Legal from './pages/public/Legal.jsx'
 
 // Admin pages
 import DataDownload from './pages/DataDownload.jsx'
@@ -119,6 +120,7 @@ export default function App() {
             <Route path="history/:userId" element={<BallotHistory />} />
             <Route path="history" element={<BallotHistory />} />
             <Route path="login" element={<Login />} />
+            <Route path="legal" element={<Legal />} />
           </Route>
 
           {/* Admin */}
