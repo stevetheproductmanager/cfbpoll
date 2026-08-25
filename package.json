@@ -8,9 +8,13 @@
   "scripts": {
     "dev": "concurrently -n server,client -c yellow,cyan \"npm:server\" \"npm:client\"",
     "server": "npm --workspace server run dev",
-    "client": "npm --workspace client run dev"
+    "client": "npm --workspace client run dev",
+    "heroku-postbuild": "npm --workspace client run build"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
