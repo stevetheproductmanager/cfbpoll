@@ -7,8 +7,12 @@ export function makeCfbdClient({ baseURL, apiKey }) {
     baseURL,
     headers: { Authorization: `Bearer ${apiKey}` },
     timeout: 30000,
-    maxContentLength: Infinity,
-    maxBodyLength: Infinity
+    // NOTE: Infinity here triggers a known axios/follow-redirects bug on large
+    // gzip-compressed responses (e.g. stats-player-season for big seasons) —
+    // the internal buffer-growth math does arithmetic against Infinity and can
+    // throw "RangeError: offset is out of range". Use a large finite cap instead.
+    maxContentLength: 500 * 1024 * 1024,
+    maxBodyLength: 500 * 1024 * 1024
   });
 
   client.interceptors.response.use(

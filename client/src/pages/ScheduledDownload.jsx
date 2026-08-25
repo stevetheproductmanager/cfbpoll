@@ -117,7 +117,7 @@ function BackfillPanel() {
       )}
 
       {status?.log?.length > 0 && (
-        <div style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', maxHeight: 180, overflowY: 'auto', fontSize: 12 }}>
+        <div style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', height: 180, minHeight: 100, maxHeight: '80vh', overflowY: 'auto', fontSize: 12, resize: 'vertical' }}>
           {status.log.slice().reverse().map((entry, i) => (
             <div key={i} style={{ padding: '4px 0', borderBottom: i < status.log.length - 1 ? '1px solid var(--border)' : 'none', display: 'flex', gap: 8 }}>
               <span style={{ color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', fontSize: 11 }}>
