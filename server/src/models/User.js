@@ -6,6 +6,7 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   avatar: { type: String },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  banned: { type: Boolean, default: false },
 }, { timestamps: true });
 
 export default mongoose.model('User', userSchema);

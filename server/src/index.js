@@ -477,15 +477,22 @@ app.post('/api/ballots', ballotWriteLimiter, requireAuth, async (req, res) => {
   const { rankings, season = 2025 } = req.body;
   const userId = req.user.id;
   const userName = req.user.name;
-  if (!Array.isArray(rankings) || rankings.length === 0 || rankings.length > 25) {
-    return res.status(400).json({ error: 'Invalid ballot' });
+
+  const account = await User.findById(userId).lean();
+  if (account?.banned) return res.status(403).json({ error: 'Your voting privileges have been suspended' });
+
+  const settings = await loadSiteSettings();
+  if (!Array.isArray(rankings) || rankings.length === 0 || rankings.length > settings.maxBallotSize) {
+    return res.status(400).json({ error: `Invalid ballot — must be 1 to ${settings.maxBallotSize} teams` });
   }
   const info = await getCurrentWeekInfo(season);
-  if (!info.isOpen) return res.status(400).json({ error: 'Voting is closed for this week', deadline: info.deadline });
+  if (!info.isOpen && !settings.allowLateSubmissions) {
+    return res.status(400).json({ error: 'Voting is closed for this week', deadline: info.deadline });
+  }
 
   const ballot = await Ballot.findOneAndUpdate(
     { userId, season, week: info.week },
-    { userId, userName: userName || 'Anonymous', rankings: rankings.slice(0, 25), season, week: info.week, submittedAt: new Date() },
+    { userId, userName: userName || 'Anonymous', rankings: rankings.slice(0, settings.maxBallotSize), season, week: info.week, submittedAt: new Date() },
     { upsert: true, new: true }
   );
   res.json({ ok: true, ballot });
@@ -760,6 +767,82 @@ app.post('/api/ballots/seed-mock', requireAdmin, async (req, res) => {
 app.post('/api/ballots/clear-mock', requireAdmin, async (req, res) => {
   const result = await Ballot.deleteMany({ userId: /^mock_/ });
   res.json({ ok: true, deleted: result.deletedCount });
+});
+
+// ---- Site settings ----
+const DEFAULT_SITE_SETTINGS = { maxBallotSize: 25, allowLateSubmissions: false, announcementBanner: '' };
+
+async function loadSiteSettings() {
+  const doc = await CfbdData.findOne({ season: 0, slug: 'site_settings' }).lean();
+  return { ...DEFAULT_SITE_SETTINGS, ...(doc?.data || {}) };
+}
+async function saveSiteSettings(cfg) {
+  const clean = {
+    maxBallotSize: Math.max(1, Math.min(25, Number(cfg.maxBallotSize) || 25)),
+    allowLateSubmissions: !!cfg.allowLateSubmissions,
+    announcementBanner: String(cfg.announcementBanner || '').slice(0, 300),
+  };
+  await CfbdData.findOneAndUpdate(
+    { season: 0, slug: 'site_settings' },
+    { data: clean, downloadedAt: new Date() },
+    { upsert: true }
+  );
+  return clean;
+}
+
+app.get('/api/settings', async (req, res) => {
+  // Public — the banner and ballot-size cap need to be readable by the public site.
+  res.json(await loadSiteSettings());
+});
+app.post('/api/admin/settings', requireAdmin, async (req, res) => {
+  res.json({ ok: true, settings: await saveSiteSettings(req.body || {}) });
+});
+
+// ---- User management ----
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  const users = await User.find().sort({ createdAt: -1 }).lean();
+  const counts = await Ballot.aggregate([{ $group: { _id: '$userId', n: { $sum: 1 } } }]);
+  const countMap = new Map(counts.map(c => [c._id, c.n]));
+  res.json({
+    users: users.map(u => ({
+      id: u._id.toString(), email: u.email, name: u.name, avatar: u.avatar,
+      role: u.role, banned: !!u.banned, createdAt: u.createdAt,
+      ballotCount: countMap.get(u._id.toString()) || 0,
+    })),
+  });
+});
+app.post('/api/admin/users/:id/role', requireAdmin, async (req, res) => {
+  const { role } = req.body;
+  if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).lean();
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ ok: true });
+});
+app.post('/api/admin/users/:id/ban', requireAdmin, async (req, res) => {
+  const user = await User.findByIdAndUpdate(req.params.id, { banned: !!req.body.banned }, { new: true }).lean();
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ ok: true, banned: user.banned });
+});
+
+// ---- Ballot moderation ----
+app.get('/api/admin/ballots', requireAdmin, async (req, res) => {
+  const { season, week, q } = req.query;
+  const filter = {};
+  if (season) filter.season = Number(season);
+  if (week) filter.week = Number(week);
+  if (q) filter.userName = { $regex: String(q), $options: 'i' };
+  const limit = Math.min(200, Number(req.query.limit) || 50);
+  const skip = Number(req.query.skip) || 0;
+  const [ballots, total] = await Promise.all([
+    Ballot.find(filter).sort({ submittedAt: -1 }).skip(skip).limit(limit).lean(),
+    Ballot.countDocuments(filter),
+  ]);
+  res.json({ ballots, total });
+});
+app.delete('/api/admin/ballots/:id', requireAdmin, async (req, res) => {
+  const result = await Ballot.deleteOne({ _id: req.params.id });
+  if (result.deletedCount === 0) return res.status(404).json({ error: 'Ballot not found' });
+  res.json({ ok: true });
 });
 
 // ---- Email notifications (deadline reminders + weekly recap) ----

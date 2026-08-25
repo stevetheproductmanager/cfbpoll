@@ -61,6 +61,14 @@ const ADMIN_NAV = [
       { key: 'pollmanager', label: 'Manage Poll' },
     ],
   },
+  {
+    key: 'site', label: 'Site Admin',
+    tabs: [
+      { key: 'users', label: 'Users' },
+      { key: 'ballotmod', label: 'Ballots' },
+      { key: 'sitesettings', label: 'Settings' },
+    ],
+  },
 ]
 
 export default function AdminHeader({ showData, onToggleData, subTab, onTabClick }) {

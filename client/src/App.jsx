@@ -26,6 +26,9 @@ import NarrativeTop25 from './pages/NarrativeTop25.jsx'
 import PlayerAwards from './pages/PlayerAwards.jsx'
 import WeekByWeek from './pages/WeekByWeek.jsx'
 import PollManager from './pages/PollManager.jsx'
+import AdminUsers from './pages/AdminUsers.jsx'
+import AdminBallots from './pages/AdminBallots.jsx'
+import AdminSettings from './pages/AdminSettings.jsx'
 import AdminHeader from './components/AdminHeader.jsx'
 
 /* ==============================
@@ -69,6 +72,9 @@ function AdminContent() {
       case 'narrative': return <NarrativeTop25 />
       case 'awards': return <PlayerAwards />
       case 'pollmanager': return <PollManager />
+      case 'users': return <AdminUsers />
+      case 'ballotmod': return <AdminBallots />
+      case 'sitesettings': return <AdminSettings />
       default: return <Rankings />
     }
   }
@@ -83,7 +89,7 @@ function AdminContent() {
       />
 
       <div className="container">
-        {subTab === 'pollmanager' ? <PollManager /> : !hasData && !loading ? <DataGate /> : hasData ? renderPage() : null}
+        {['pollmanager', 'users', 'ballotmod', 'sitesettings'].includes(subTab) ? renderPage() : !hasData && !loading ? <DataGate /> : hasData ? renderPage() : null}
       </div>
     </>
   )
