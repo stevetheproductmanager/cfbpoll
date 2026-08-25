@@ -41,6 +41,7 @@ const ADMIN_NAV = [
       { key: 'mockvoters', label: 'Mock Voters' },
       { key: 'scheduleddownload', label: 'Scheduled Data Download' },
       { key: 'emailnotifications', label: 'Email Notifications' },
+      { key: 'custompolls', label: 'Custom Polls' },
     ],
   },
   {

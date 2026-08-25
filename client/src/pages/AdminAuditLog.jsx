@@ -7,6 +7,7 @@ const ACTION_LABELS = {
   'week.edit': 'Edited week', 'week.create': 'Created week', 'week.seed-calendar': 'Seeded calendar',
   'user.role': 'Changed role', 'user.suspend': 'Suspended voter', 'user.reinstate': 'Reinstated voter',
   'ballot.delete': 'Deleted ballot', 'settings.save': 'Saved settings',
+  'custompoll.unpublish': 'Unpublished custom poll', 'custompoll.delete': 'Deleted custom poll',
 }
 
 export default function AdminAuditLog() {

@@ -29,8 +29,10 @@ import CustomPoll from './models/CustomPoll.js';
 import Comment from './models/Comment.js';
 import GamePick from './models/GamePick.js';
 import AwardVote from './models/AwardVote.js';
+import BacktestRun from './models/BacktestRun.js';
 import cron from 'node-cron';
 import { sendEmail, getEmailLog, deadlineReminderEmail, weeklyRecapEmail } from './email.js';
+import { recordRateLimitHit, getRateLimitStats } from './rateLimitStats.js';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 
@@ -121,13 +123,21 @@ app.use(express.json({ limit: '1mb' }));
 app.use(morgan('dev'));
 
 // ---- Rate limiting ----
+// Records a hit (for the admin rate-limit-stats dashboard) and sends the same
+// 429 response the `message` option would have sent by default.
+function limiterHandler(name, message) {
+  return (req, res) => {
+    recordRateLimitHit(name);
+    res.status(429).json({ error: message });
+  };
+}
 // Generous baseline across the whole API (read-heavy: rankings, resumes, logos...).
 app.use('/api', rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 600,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests — please slow down and try again shortly.' },
+  handler: limiterHandler('baseline', 'Too many requests — please slow down and try again shortly.'),
 }));
 // Tighter limit on auth (brute-force / token-minting abuse).
 const authLimiter = rateLimit({
@@ -135,7 +145,7 @@ const authLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many login attempts — please try again shortly.' },
+  handler: limiterHandler('auth', 'Too many login attempts — please try again shortly.'),
 });
 // Tighter limit on ballot writes (one real voter shouldn't need many submits/min).
 const ballotWriteLimiter = rateLimit({
@@ -143,7 +153,7 @@ const ballotWriteLimiter = rateLimit({
   limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many ballot changes — please slow down.' },
+  handler: limiterHandler('ballotWrite', 'Too many ballot changes — please slow down.'),
 });
 // Shared limiter for lighter-weight public write actions — comments, game
 // picks, award votes, custom-poll creation — that don't need the ballot's
@@ -153,7 +163,7 @@ const writeLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many submissions — please slow down and try again shortly.' },
+  handler: limiterHandler('write', 'Too many submissions — please slow down and try again shortly.'),
 });
 
 const {
@@ -1077,6 +1087,98 @@ app.get('/api/admin/audit-log', requireAdmin, async (req, res) => {
   res.json({ actions });
 });
 
+// ---- Custom-poll moderation ----
+// (No admin UI existed for the custom-poll system at all before this — the
+// only way to inspect or remove a bad poll was direct DB access.)
+app.get('/api/admin/custom-polls', requireAdmin, async (req, res) => {
+  const { season, published, q } = req.query;
+  const filter = {};
+  if (season) filter.season = Number(season);
+  if (published === 'true') filter.published = true;
+  if (published === 'false') filter.published = { $ne: true };
+  if (q) filter.$or = [{ name: { $regex: String(q), $options: 'i' } }, { userName: { $regex: String(q), $options: 'i' } }];
+  const limit = Math.min(200, Number(req.query.limit) || 50);
+  const skip = Number(req.query.skip) || 0;
+  const [polls, total] = await Promise.all([
+    CustomPoll.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(limit)
+      .select('name userName userId season weights advanced published updatedAt createdAt rankings').lean(),
+    CustomPoll.countDocuments(filter),
+  ]);
+  // Trim each poll's rankings down to just the Top 5 for the list view — full
+  // rankings aren't needed until an admin drills into one.
+  res.json({
+    polls: polls.map(p => ({ ...p, rankings: (p.rankings || []).slice(0, 5) })),
+    total,
+  });
+});
+app.post('/api/admin/custom-polls/:id/unpublish', requireAdmin, async (req, res) => {
+  const poll = await CustomPoll.findByIdAndUpdate(req.params.id, { published: false }, { new: true }).lean();
+  if (!poll) return res.status(404).json({ error: 'Poll not found' });
+  await logAction(req, 'custompoll.unpublish', `${poll.name} (${poll.userName})`);
+  res.json({ ok: true });
+});
+app.delete('/api/admin/custom-polls/:id', requireAdmin, async (req, res) => {
+  const poll = await CustomPoll.findById(req.params.id).lean();
+  const result = await CustomPoll.deleteOne({ _id: req.params.id });
+  if (result.deletedCount === 0) return res.status(404).json({ error: 'Poll not found' });
+  await logAction(req, 'custompoll.delete', poll ? `${poll.name} (${poll.userName})` : req.params.id);
+  res.json({ ok: true });
+});
+
+// GET /api/admin/custom-polls-stats — backtest adoption (how many runs, which
+// seasons are popular) plus a quick read on the accuracy leaderboard so an
+// admin can spot a suspiciously perfect score without leaving the dashboard.
+app.get('/api/admin/custom-polls-stats', requireAdmin, async (req, res) => {
+  try {
+    const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [totalRuns, last30dRuns, bySeasonAgg, totalPolls, publishedPolls] = await Promise.all([
+      BacktestRun.countDocuments(),
+      BacktestRun.countDocuments({ createdAt: { $gte: since30d } }),
+      BacktestRun.aggregate([{ $group: { _id: '$season', runs: { $sum: 1 } } }, { $sort: { runs: -1 } }]),
+      CustomPoll.countDocuments(),
+      CustomPoll.countDocuments({ published: true }),
+    ]);
+    res.json({
+      totalRuns, last30dRuns,
+      bySeason: bySeasonAgg.map(s => ({ season: s._id, runs: s.runs })),
+      totalPolls, publishedPolls,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/rate-limit-stats — 429 hit counts since server start, so an
+// admin can tell whether the write limiters are actually being triggered
+// (and by which route) rather than guessing.
+app.get('/api/admin/rate-limit-stats', requireAdmin, (req, res) => {
+  res.json(getRateLimitStats());
+});
+
+// GET /api/admin/data-coverage — which CFBD endpoints have been downloaded
+// for which seasons, so an admin can see at a glance what's missing before
+// a feature (like backtesting) silently comes up empty for a given year.
+const CORE_SLUGS = ['teams', 'teams-fbs', 'games-regular', 'sp-ratings', 'polls-rankings'];
+app.get('/api/admin/data-coverage', requireAdmin, async (req, res) => {
+  try {
+    const rows = await CfbdData.find({ season: { $gt: 0 } }).select('season slug downloadedAt').lean();
+    const bySeason = new Map();
+    for (const r of rows) {
+      if (!bySeason.has(r.season)) bySeason.set(r.season, {});
+      bySeason.get(r.season)[r.slug] = r.downloadedAt;
+    }
+    const seasons = [...bySeason.keys()].sort((a, b) => b - a).map(season => {
+      const slugMap = bySeason.get(season);
+      const slugs = ENDPOINTS.map(ep => ({ slug: ep.slug, downloadedAt: slugMap[ep.slug] || null }));
+      const coreComplete = CORE_SLUGS.every(s => slugMap[s]);
+      return { season, slugs, coreComplete, totalDownloaded: Object.keys(slugMap).length, totalEndpoints: ENDPOINTS.length };
+    });
+    res.json({ seasons, coreSlugs: CORE_SLUGS });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ---- Email notifications (deadline reminders + weekly recap) ----
 const DEFAULT_EMAIL_CONFIG = { remindersEnabled: false, reminderLeadHours: 24, recapEnabled: false, reminded: {} };
 
@@ -1465,6 +1567,8 @@ app.post('/api/custom-polls/backtest', requireAuth, async (req, res) => {
     if (!apTop25.length) return res.status(400).json({ error: `No AP Top 25 poll downloaded for ${season} — nothing to grade against` });
 
     const { overlap, exactMatches, avgRankDiff, closeness, perTeam } = scoreBacktest(apTop25, customRankings);
+    BacktestRun.create({ userId: req.user.id, userName: req.user.name || 'Anonymous', season, closeness })
+      .catch(e => console.error('[backtest] failed to record run:', e.message));
     res.json({ season, apTop25, customTop25: customRankings.slice(0, 25).map(t => t.team), overlap, exactMatches, avgRankDiff, closeness, perTeam });
   } catch (e) {
     res.status(500).json({ error: e.message });
