@@ -333,8 +333,15 @@ function computeIsOpen(wk) {
   return true;
 }
 
+// "Current week" is whichever week the admin has flagged open, preferring the
+// highest-numbered one if several are open at once. This matters once a whole
+// season calendar (or leftover test weeks) exists in the DB — the highest week
+// *number* isn't necessarily the one voting should be happening on. Falls back
+// to the highest-numbered week overall (so the public site still shows a
+// "Voting Closed" state) only when nothing is currently open.
 async function getCurrentWeekInfo(season = 2025) {
-  const wk = await Week.findOne({ season }).sort({ week: -1 }).lean();
+  const openWk = await Week.findOne({ season, isOpen: true }).sort({ week: -1 }).lean();
+  const wk = openWk || await Week.findOne({ season }).sort({ week: -1 }).lean();
   if (!wk) return { week: 1, label: null, deadline: null, isOpen: true, season };
   return { week: wk.week, label: wk.label || null, deadline: wk.deadline, isOpen: computeIsOpen(wk), season };
 }
@@ -401,18 +408,23 @@ app.get('/api/weeks', async (req, res) => {
   res.json({ current: info, weeks: weekData, maxWeek: info.week });
 });
 
+// Only one week per season should ever be the "active" voting week. Without
+// this, leftover/mock-seeded weeks left flagged open would fight over which
+// one getCurrentWeekInfo() picks, and admin's actions elsewhere seem to do
+// nothing.
+async function closeOtherWeeks(season, keepWeek) {
+  await Week.updateMany({ season, week: { $ne: keepWeek } }, { $set: { isOpen: false } });
+}
+
 // POST /api/weeks/advance
 app.post('/api/weeks/advance', requireAdmin, async (req, res) => {
   const season = Number(req.body.season || 2025);
   const current = await Week.findOne({ season }).sort({ week: -1 });
-  if (current) {
-    current.isOpen = false;
-    await current.save();
-  }
   const newWeek = (current?.week || 0) + 1;
   const deadline = req.body.deadline ? new Date(req.body.deadline) : nextMonday5pmPST();
   const { startDate, endDate } = weekBoundsFromDeadline(deadline);
   await Week.create({ season, week: newWeek, label: `Week ${newWeek}`, deadline, startDate, endDate, isOpen: true });
+  await closeOtherWeeks(season, newWeek);
   res.json({ ok: true, previousWeek: current?.week, newWeek, deadline });
 });
 
@@ -435,12 +447,14 @@ app.post('/api/weeks/update', requireAdmin, async (req, res) => {
     }
   }
   await wk.save();
+  // Opening this week means it — and only it — is the active voting week.
+  if (open) await closeOtherWeeks(season, week);
   res.json({ ok: true, week: wk });
 });
 
 // POST /api/weeks/create — manually add any week (not just the next sequential one)
 app.post('/api/weeks/create', requireAdmin, async (req, res) => {
-  const { week, label, deadline, startDate, endDate, isOpen = true, season = 2025 } = req.body;
+  const { week, label, deadline, startDate, endDate, isOpen = false, season = 2025 } = req.body;
   if (!week || !Number.isFinite(Number(week))) return res.status(400).json({ error: 'Missing/invalid week number' });
   const exists = await Week.findOne({ season, week });
   if (exists) return res.status(409).json({ error: `Week ${week} already exists for ${season}` });
@@ -453,6 +467,7 @@ app.post('/api/weeks/create', requireAdmin, async (req, res) => {
     endDate: endDate ? new Date(endDate) : bounds.endDate,
     isOpen,
   });
+  if (isOpen) await closeOtherWeeks(season, Number(week));
   res.json({ ok: true, week: wk });
 });
 
@@ -473,12 +488,17 @@ app.post('/api/weeks/seed-calendar', requireAdmin, async (req, res) => {
   const { season = 2025, startDate } = req.body;
   const anchor = startDate ? new Date(startDate) : nextMonday5pmPST();
   const existing = new Set((await Week.find({ season }, 'week').lean()).map(w => w.week));
+  // Seeded weeks all start closed — the admin picks which one is active via
+  // the Week Management toggle (which enforces a single open week). Defaulting
+  // any of these to open risked fighting with an already-open week elsewhere
+  // in the calendar (or a stray leftover test week) over which one "current"
+  // voting resolves to.
   const toCreate = NCAA_CALENDAR
     .filter(w => !existing.has(w.week))
     .map(w => {
       const deadline = new Date(anchor.getTime() + (w.week - 1) * 7 * 86400000);
       const { startDate, endDate } = weekBoundsFromDeadline(deadline);
-      return { season, week: w.week, label: w.label, deadline, startDate, endDate, isOpen: true };
+      return { season, week: w.week, label: w.label, deadline, startDate, endDate, isOpen: false };
     });
   if (toCreate.length) await Week.insertMany(toCreate);
   res.json({ ok: true, created: toCreate.length, skipped: NCAA_CALENDAR.length - toCreate.length });
