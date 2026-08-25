@@ -340,9 +340,13 @@ function computeIsOpen(wk) {
 // to the highest-numbered week overall (so the public site still shows a
 // "Voting Closed" state) only when nothing is currently open.
 async function getCurrentWeekInfo(season = 2025) {
-  const openWk = await Week.findOne({ season, isOpen: true }).sort({ week: -1 }).lean();
-  const wk = openWk || await Week.findOne({ season }).sort({ week: -1 }).lean();
-  if (!wk) return { week: 1, label: null, deadline: null, isOpen: true, season };
+  const allWeeks = await Week.find({ season }).sort({ week: -1 }).lean();
+  if (!allWeeks.length) return { week: 1, label: null, deadline: null, isOpen: true, season };
+  // A stale week can still carry isOpen:true in the DB even though its
+  // deadline has long passed (it was never explicitly re-closed) — so filter
+  // on the *computed* open state, not the raw flag, before picking the
+  // highest-numbered candidate.
+  const wk = allWeeks.find(w => computeIsOpen(w)) || allWeeks[0];
   return { week: wk.week, label: wk.label || null, deadline: wk.deadline, isOpen: computeIsOpen(wk), season };
 }
 
