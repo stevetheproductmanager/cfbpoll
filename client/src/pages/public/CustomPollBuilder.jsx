@@ -117,7 +117,7 @@ export default function CustomPollBuilder() {
   const [searchParams] = useSearchParams()
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS)
   const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED)
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [configTab, setConfigTab] = useState('weights') // 'weights' | 'advanced' | 'backtest'
   const [advTipSeen, setAdvTipSeen] = useState(() => {
     try { return localStorage.getItem(ADV_TIP_KEY) === '1' } catch { return false }
   })
@@ -133,7 +133,6 @@ export default function CustomPollBuilder() {
 
   // Backtesting — grade the current weights/advanced against a completed
   // season's real final AP Top 25.
-  const [showBacktest, setShowBacktest] = useState(false)
   const [backtestSeasons, setBacktestSeasons] = useState([])
   const [backtestSeason, setBacktestSeason] = useState('')
   const [backtestResult, setBacktestResult] = useState(null)
@@ -310,90 +309,100 @@ export default function CustomPollBuilder() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 20, alignItems: 'start' }} className="ballot-grid">
         {/* Sliders */}
         <div className="card" style={{ marginTop: 0 }}>
-          <h3 style={{ marginBottom: 4 }}>Weight Your Metrics</h3>
-          <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Values are automatically normalized to 100%.</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-            {PRESETS.map(p => (
-              <button key={p.key} className="btn btn-ghost" onClick={() => applyPreset(p)} style={{ fontSize: 11, padding: '4px 8px' }}>
-                {p.label}
+          <h3 style={{ marginBottom: 10 }}>Configure Your Poll</h3>
+
+          {/* Tabs replace the old stacked accordions — only one section's
+              content renders at a time, so the panel stays a manageable
+              length instead of growing to 3 sections + sliders at once. */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
+            {[
+              { key: 'weights', label: '🎚️ Weights' },
+              { key: 'advanced', label: '⚙️ Advanced', badge: !isAdvancedDefault },
+              { key: 'backtest', label: '📊 Backtest' },
+            ].map(t => (
+              <button key={t.key} onClick={() => setConfigTab(t.key)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer', padding: '6px 10px', fontSize: 13, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  borderBottom: configTab === t.key ? '2px solid var(--brand2)' : '2px solid transparent',
+                  color: configTab === t.key ? 'var(--brand2)' : 'var(--text-secondary)', marginBottom: -1,
+                }}>
+                {t.label}
+                {t.badge && <span style={{ width: 6, height: 6, borderRadius: 99, background: 'var(--brand2)' }} />}
               </button>
             ))}
           </div>
-          <WeightBar weights={weights} />
-          {METRICS.map(m => (
-            <Slider key={m.key} metric={m} value={weights[m.key]} onChange={setWeight} pct={pct[m.key]} />
-          ))}
 
-          <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 10 }}>
-            <button
-              onClick={() => setShowAdvanced(s => !s)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)' }}
-            >
-              {showAdvanced ? '▾' : '▸'} ⚙️ Advanced Tuning
-              {!isAdvancedDefault && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--brand2)', background: 'var(--brand-glow)', padding: '1px 6px', borderRadius: 6 }}>Modified</span>}
-            </button>
-            {showAdvanced && (
-              <div style={{ marginTop: 12 }}>
-                {!advTipSeen && <AdvancedTuningTip onDismiss={dismissAdvTip} />}
-                <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>Fine-tune the mechanics behind each metric above. Every knob starts at the site's official setting.</p>
-                {ADVANCED_KNOBS.map(k => (
-                  <AdvancedSlider key={k.key} knob={k} value={advanced[k.key]} onChange={setAdvancedKnob} />
+          {configTab === 'weights' && (
+            <div>
+              <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Values are automatically normalized to 100%.</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {PRESETS.map(p => (
+                  <button key={p.key} className="btn btn-ghost" onClick={() => applyPreset(p)} style={{ fontSize: 11, padding: '4px 8px' }}>
+                    {p.label}
+                  </button>
                 ))}
-                <button className="btn btn-ghost" onClick={resetAdvanced} disabled={isAdvancedDefault} style={{ fontSize: 11 }}>Reset to official settings</button>
               </div>
-            )}
-          </div>
+              <WeightBar weights={weights} />
+              {METRICS.map(m => (
+                <Slider key={m.key} metric={m} value={weights[m.key]} onChange={setWeight} pct={pct[m.key]} />
+              ))}
+            </div>
+          )}
 
-          <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 10 }}>
-            <button
-              onClick={() => setShowBacktest(s => !s)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)' }}
-            >
-              {showBacktest ? '▾' : '▸'} 📊 Backtest vs. Real AP Poll
-            </button>
-            {showBacktest && (
-              <div style={{ marginTop: 10 }}>
-                <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
-                  Run your current weights against a completed season and see how close your Top 25 landed to the real final AP poll.
-                </p>
-                {backtestSeasons.length === 0 ? (
-                  <p style={{ fontSize: 11, color: 'var(--muted)' }}>No backtestable seasons yet — an admin needs to download a season's games + AP polls (Admin → Data Download).</p>
-                ) : (
-                  <>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                      <select className="input" style={{ flex: 1 }} value={backtestSeason} onChange={e => setBacktestSeason(e.target.value)}>
-                        {backtestSeasons.map(s => <option key={s} value={s}>{s} season</option>)}
-                      </select>
-                      <button className="btn btn-primary" onClick={runBacktest} disabled={backtestLoading} style={{ fontSize: 12, padding: '4px 12px' }}>
-                        {backtestLoading ? 'Running…' : 'Run'}
-                      </button>
-                    </div>
-                    {backtestResult && backtestResult.season === Number(backtestSeason) && (
-                      <div style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
-                        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
-                          <div><div style={{ fontSize: 20, fontWeight: 800, color: 'var(--brand2)' }}>{backtestResult.closeness}%</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>closeness score</div></div>
-                          <div><div style={{ fontSize: 20, fontWeight: 800 }}>{backtestResult.exactMatches}</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>exact rank matches</div></div>
-                          <div><div style={{ fontSize: 20, fontWeight: 800 }}>{backtestResult.overlap}/25</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>teams in both Top 25s</div></div>
-                          <div><div style={{ fontSize: 20, fontWeight: 800 }}>{backtestResult.avgRankDiff ?? '—'}</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>avg rank gap</div></div>
-                        </div>
-                        <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 4 }}>Biggest disagreements</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          {[...backtestResult.perTeam].filter(t => t.diff != null).sort((a, b) => b.diff - a.diff).slice(0, 5).map(t => (
-                            <div key={t.team} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-                              <span>{t.team}</span>
-                              <span style={{ color: 'var(--muted)' }}>AP #{t.apRank} · You #{t.customRank} ({t.diff > 0 ? '±' : ''}{t.diff})</span>
-                            </div>
-                          ))}
-                        </div>
+          {configTab === 'advanced' && (
+            <div>
+              {!advTipSeen && <AdvancedTuningTip onDismiss={dismissAdvTip} />}
+              <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>Fine-tune the mechanics behind each metric on the Weights tab. Every knob starts at the site's official setting.</p>
+              {ADVANCED_KNOBS.map(k => (
+                <AdvancedSlider key={k.key} knob={k} value={advanced[k.key]} onChange={setAdvancedKnob} />
+              ))}
+              <button className="btn btn-ghost" onClick={resetAdvanced} disabled={isAdvancedDefault} style={{ fontSize: 11 }}>Reset to official settings</button>
+            </div>
+          )}
+
+          {configTab === 'backtest' && (
+            <div>
+              <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+                Run your current weights against a completed season and see how close your Top 25 landed to the real final AP poll.
+              </p>
+              {backtestSeasons.length === 0 ? (
+                <p style={{ fontSize: 11, color: 'var(--muted)' }}>No backtestable seasons yet — an admin needs to download a season's games + AP polls (Admin → Data Download).</p>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <select className="input" style={{ flex: 1 }} value={backtestSeason} onChange={e => setBacktestSeason(e.target.value)}>
+                      {backtestSeasons.map(s => <option key={s} value={s}>{s} season</option>)}
+                    </select>
+                    <button className="btn btn-primary" onClick={runBacktest} disabled={backtestLoading} style={{ fontSize: 12, padding: '4px 12px' }}>
+                      {backtestLoading ? 'Running…' : 'Run'}
+                    </button>
+                  </div>
+                  {backtestResult && backtestResult.season === Number(backtestSeason) && (
+                    <div style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
+                        <div><div style={{ fontSize: 20, fontWeight: 800, color: 'var(--brand2)' }}>{backtestResult.closeness}%</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>closeness score</div></div>
+                        <div><div style={{ fontSize: 20, fontWeight: 800 }}>{backtestResult.exactMatches}</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>exact rank matches</div></div>
+                        <div><div style={{ fontSize: 20, fontWeight: 800 }}>{backtestResult.overlap}/25</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>teams in both Top 25s</div></div>
+                        <div><div style={{ fontSize: 20, fontWeight: 800 }}>{backtestResult.avgRankDiff ?? '—'}</div><div style={{ fontSize: 10, color: 'var(--muted)' }}>avg rank gap</div></div>
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 4 }}>Biggest disagreements</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {[...backtestResult.perTeam].filter(t => t.diff != null).sort((a, b) => b.diff - a.diff).slice(0, 5).map(t => (
+                          <div key={t.team} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                            <span>{t.team}</span>
+                            <span style={{ color: 'var(--muted)' }}>AP #{t.apRank} · You #{t.customRank} ({t.diff > 0 ? '±' : ''}{t.diff})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
             <button className="btn btn-primary" onClick={compute} disabled={loading} style={{ flex: 1 }}>
               {loading ? 'Computing…' : '⚙️ Compute Rankings'}
             </button>
