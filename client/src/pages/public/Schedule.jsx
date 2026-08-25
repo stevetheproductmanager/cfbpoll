@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Link } from 'react-router-dom'
-import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
+import TeamScoreLine from '../../components/TeamScoreLine.jsx'
 
 const SEASON = 2025
 
@@ -29,21 +28,13 @@ function GameRow({ g }) {
       </div>
 
       <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <TeamLogo name={g.away} size={20} />
-          <Link to={`/team/${encodeURIComponent(g.away)}`} style={{ color: 'inherit', textDecoration: 'none', fontWeight: g.played && g.winner === g.away ? 800 : 500 }}>
-            {g.away}
-          </Link>
-          {g.played && <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 13 }}>{g.awayScore}</span>}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <TeamLogo name={g.home} size={20} />
-          <Link to={`/team/${encodeURIComponent(g.home)}`} style={{ color: 'inherit', textDecoration: 'none', fontWeight: g.played && g.winner === g.home ? 800 : 500 }}>
-            {g.home}
-          </Link>
-          {!g.neutralSite && <span style={{ fontSize: 10, color: 'var(--muted)' }}>(H)</span>}
-          {g.played && <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 13 }}>{g.homeScore}</span>}
-        </div>
+        <TeamScoreLine team={g.away} bold={g.played && g.awayScore > g.homeScore} score={g.played ? g.awayScore : null} />
+        <TeamScoreLine
+          team={g.home}
+          bold={g.played && g.homeScore > g.awayScore}
+          score={g.played ? g.homeScore : null}
+          afterName={!g.neutralSite ? <span style={{ fontSize: 10, color: 'var(--muted)' }}>(H)</span> : null}
+        />
       </div>
 
       <div style={{ width: 130, flexShrink: 0, textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)' }}>

@@ -81,7 +81,7 @@ function ResumeLine({ resume, conflict }) {
   )
 }
 
-function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDragging, locked, diff, conflict, bold, onToggleBold }) {
+function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDragging, locked, diff, conflict, bold, onToggleBold, onMoveUp, onMoveDown, isFirst, isLast }) {
   return (
     <div
       data-ballot-idx={rank - 1}
@@ -122,6 +122,22 @@ function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDraggi
         </div>
         <ResumeLine resume={resume} conflict={conflict} />
       </div>
+      {!locked && (onMoveUp || onMoveDown) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+          <button
+            onClick={e => { e.stopPropagation(); onMoveUp() }}
+            disabled={isFirst}
+            title="Move up"
+            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: isFirst ? 'default' : 'pointer', padding: 0, fontSize: 12, lineHeight: 1, opacity: isFirst ? 0.25 : 1 }}
+          >▲</button>
+          <button
+            onClick={e => { e.stopPropagation(); onMoveDown() }}
+            disabled={isLast}
+            title="Move down"
+            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: isLast ? 'default' : 'pointer', padding: 0, fontSize: 12, lineHeight: 1, opacity: isLast ? 0.25 : 1 }}
+          >▼</button>
+        </div>
+      )}
       {onToggleBold && !locked && (
         <button
           onClick={e => { e.stopPropagation(); onToggleBold() }}
@@ -373,6 +389,12 @@ export default function MyBallot() {
   const onHandleMove = (e) => {
     if (dragState.current == null) return
     e.preventDefault()
+    // Auto-scroll the page when dragging near the top/bottom edge of the
+    // viewport — a 25-item list is almost always taller than the screen on
+    // mobile, so without this a touch drag can never reach the far end.
+    const edge = 70
+    if (e.clientY < edge) window.scrollBy(0, -14)
+    else if (e.clientY > window.innerHeight - edge) window.scrollBy(0, 14)
     const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-ballot-idx]')
     if (!el) return
     const overIdx = Number(el.getAttribute('data-ballot-idx'))
@@ -388,6 +410,18 @@ export default function MyBallot() {
     setDragIdx(overIdx)
   }
   const onHandleUp = () => { dragState.current = null; setDragIdx(null) }
+
+  // Tap-to-nudge alternative to dragging — more reliable than drag on touch
+  // screens, and works for keyboard/screen-reader users too.
+  const moveTeam = useCallback((idx, dir) => {
+    setBallot(prev => {
+      const newIdx = idx + dir
+      if (newIdx < 0 || newIdx >= prev.length) return prev
+      const next = [...prev]
+      ;[next[idx], next[newIdx]] = [next[newIdx], next[idx]]
+      return next
+    })
+  }, [])
 
   const applyPreset = (list, label, presetCustomPollId) => {
     const clean = (list || []).filter(Boolean).slice(0, MAX_PICKS)
@@ -607,6 +641,10 @@ export default function MyBallot() {
                 conflict={conflictSet.has(name)}
                 bold={!!confidence[name]}
                 onToggleBold={() => toggleBold(name)}
+                onMoveUp={() => moveTeam(i, -1)}
+                onMoveDown={() => moveTeam(i, 1)}
+                isFirst={i === 0}
+                isLast={i === ballot.length - 1}
               />
             ))}
           </div>

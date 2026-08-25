@@ -203,9 +203,14 @@ function DashboardCard({ dashboard }) {
   )
 }
 
+// First-time (signed-out) visitors get the 3 things that matter most, not
+// the full 10-item grid — that comes later, once they're actually in the app.
+const HIGHLIGHT_KEYS = ['Your Ballot, Your Voice', 'Live Consensus', 'Weekly Game Picks']
+
 export default function Landing() {
   const { user } = useAuth()
   const [dashboard, setDashboard] = useState(null)
+  const [showAllFeatures, setShowAllFeatures] = useState(false)
 
   useEffect(() => {
     fetch('/api/dashboard').then(r => r.json()).then(setDashboard).catch(() => {})
@@ -256,12 +261,13 @@ export default function Landing() {
       <BiggestMovers />
       <DarkHorseTracker />
 
-      {/* Features */}
+      {/* Features — signed-out visitors see just the 3 highlights first, to
+          avoid a wall of 10 equal-weight choices before they've even signed up. */}
       <div style={{
         maxWidth: 1000, margin: '0 auto', padding: '0 24px 80px',
         display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16,
       }}>
-        {FEATURES.map(f => (
+        {(user || showAllFeatures ? FEATURES : FEATURES.filter(f => HIGHLIGHT_KEYS.includes(f.title))).map(f => (
           <Link key={f.title} to={f.to} className="card" style={{ textAlign: 'center', marginTop: 0, textDecoration: 'none', color: 'inherit' }}>
             <div style={{ fontSize: 36, marginBottom: 12 }}>{f.icon}</div>
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{f.title}</h3>
@@ -269,6 +275,13 @@ export default function Landing() {
           </Link>
         ))}
       </div>
+      {!user && !showAllFeatures && (
+        <div style={{ textAlign: 'center', marginTop: -60, marginBottom: 80 }}>
+          <button className="btn btn-ghost" onClick={() => setShowAllFeatures(true)} style={{ fontSize: 13, padding: '8px 20px' }}>
+            See everything else you can do →
+          </button>
+        </div>
+      )}
 
       {/* CTA */}
       <div style={{

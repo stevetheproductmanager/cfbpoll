@@ -12,13 +12,15 @@ export default function GamePicks() {
   const [mine, setMine] = useState({}) // gameId -> pickedTeam
   const [saving, setSaving] = useState(false)
   const [leaderboard, setLeaderboard] = useState([])
+  const [loading, setLoading] = useState(true)
 
   const loadGames = useCallback((wk) => {
+    setLoading(true)
     fetch(`/api/picks/games${wk ? `?week=${wk}` : ''}`).then(r => r.json()).then(d => {
       if (d.error) return
       setGamesData(d)
       if (week === null) setWeek(d.week)
-    }).catch(() => {})
+    }).catch(() => {}).finally(() => setLoading(false))
   }, [week])
 
   useEffect(() => { loadGames() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -86,7 +88,9 @@ export default function GamePicks() {
         ))}
       </div>
 
-      {!games.length ? (
+      {loading ? (
+        <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>Loading games…</div>
+      ) : !games.length ? (
         <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>No games found for this week.</div>
       ) : (
         <>
@@ -121,7 +125,13 @@ export default function GamePicks() {
                   const correct = myPick ? myPick === g.winner : null
                   return (
                     <div key={g.gameId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', fontSize: 13, background: 'var(--panel-2)', borderRadius: 8 }}>
-                      <span style={{ flex: 1 }}>{g.away} @ {g.home}</span>
+                      <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <TeamLogo name={g.away} size={16} />
+                        <span style={{ fontWeight: g.winner === g.away ? 700 : 400 }}>{g.away}</span>
+                        <span style={{ color: 'var(--muted)' }}>@</span>
+                        <TeamLogo name={g.home} size={16} />
+                        <span style={{ fontWeight: g.winner === g.home ? 700 : 400 }}>{g.home}</span>
+                      </span>
                       <span style={{ fontWeight: 700 }}>{g.awayScore}-{g.homeScore}</span>
                       {myPick && (
                         <span style={{ fontSize: 11, fontWeight: 700, color: correct ? 'var(--ok)' : 'var(--err)' }}>

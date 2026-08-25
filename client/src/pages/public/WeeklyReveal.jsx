@@ -10,13 +10,14 @@ export default function WeeklyReveal() {
   const [data, setData] = useState(null)
   const [weekInfo, setWeekInfo] = useState(null)
   const [revealed, setRevealed] = useState(0)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetch('/api/weeks').then(r => r.json()).then(w => {
       setWeekInfo(w)
       const week = w.current?.week || 1
-      fetch(`/api/ballots/consensus?week=${week}`).then(r => r.json()).then(setData).catch(() => {})
-    }).catch(() => {})
+      fetch(`/api/ballots/consensus?week=${week}`).then(r => r.json()).then(setData).catch(() => {}).finally(() => setLoading(false))
+    }).catch(() => setLoading(false))
   }, [])
 
   const top25 = (data?.rankings || []).slice(0, 25)
@@ -51,7 +52,9 @@ export default function WeeklyReveal() {
         )}
       </div>
 
-      {!top25.length ? (
+      {loading ? (
+        <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>Loading this week's reveal…</div>
+      ) : !top25.length ? (
         <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>No ballots yet this week.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
