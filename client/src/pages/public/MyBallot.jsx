@@ -192,7 +192,7 @@ function SanityCheck({ conflicts, onTeam }) {
 }
 
 export default function MyBallot() {
-  const { user } = useAuth()
+  const { user, authHeaders } = useAuth()
   const toast = useToast()
   const [ballot, setBallot] = useState(() => {
     try { return JSON.parse(localStorage.getItem(BALLOT_KEY)) || [] } catch { return [] }
@@ -344,8 +344,8 @@ export default function MyBallot() {
     try {
       const r = await fetch('/api/ballots', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, userName: user.name, rankings: ballot }),
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ rankings: ballot }),
       })
       const body = await r.json()
       if (!r.ok) { toast.error(body.error || 'Failed to submit ballot'); return }
@@ -359,8 +359,7 @@ export default function MyBallot() {
     try {
       const r = await fetch('/api/ballots/recall', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
       })
       const body = await r.json()
       if (!r.ok) { toast.error(body.error || 'Failed to recall ballot'); return }

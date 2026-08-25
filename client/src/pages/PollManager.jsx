@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useToast } from '../store/ToastContext.jsx'
+import { useAuth } from '../store/AuthContext.jsx'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 
 export default function PollManager() {
   const toast = useToast()
+  const { authHeaders } = useAuth()
   const [weeks, setWeeks] = useState([])
   const [loading, setLoading] = useState(true)
   const [seeding, setSeeding] = useState(false)
@@ -24,7 +26,7 @@ export default function PollManager() {
   const [testEmail, setTestEmail] = useState('')
 
   const fetchWeeks = useCallback(() => {
-    fetch('/api/weeks')
+    fetch('/api/weeks', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => setWeeks(d.weeks || []))
       .catch(() => toast.error('Failed to load weeks'))
@@ -32,7 +34,7 @@ export default function PollManager() {
   }, [])
 
   const fetchSchedule = useCallback(() => {
-    fetch('/api/schedule')
+    fetch('/api/schedule', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         setSchedule(d.config)
@@ -49,7 +51,7 @@ export default function PollManager() {
   }, [])
 
   const fetchEmail = useCallback(() => {
-    fetch('/api/email/config')
+    fetch('/api/email/config', { headers: authHeaders() })
       .then(r => r.json())
       .then(d => {
         if (d.config) setEmailForm(d.config)
@@ -66,7 +68,7 @@ export default function PollManager() {
     setEmailForm(next)
     try {
       const r = await fetch('/api/email/config', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(next),
       })
       if (!r.ok) { toast.error('Failed to save email settings'); return }
       toast.success('Email settings saved')
@@ -77,7 +79,7 @@ export default function PollManager() {
     if (!testEmail) { toast.error('Enter a recipient email'); return }
     try {
       const r = await fetch('/api/email/test', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: testEmail }),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ to: testEmail }),
       })
       const d = await r.json()
       if (!d.ok) { toast.error(d.error || 'Test failed'); return }
@@ -89,7 +91,7 @@ export default function PollManager() {
   const sendNow = async (endpoint, label) => {
     try {
       const r = await fetch(`/api/email/${endpoint}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(endpoint === 'send-reminders' ? { force: true } : {}),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(endpoint === 'send-reminders' ? { force: true } : {}),
       })
       const d = await r.json()
       if (!d.ok) { toast.error(d.error || `${label} failed`); return }
@@ -103,7 +105,7 @@ export default function PollManager() {
       const body = advDeadline ? { deadline: advDeadline } : {}
       const r = await fetch('/api/weeks/advance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(body),
       })
       const data = await r.json()
@@ -118,7 +120,7 @@ export default function PollManager() {
     try {
       const r = await fetch('/api/weeks/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ week, open: !currentlyOpen }),
       })
       if (!r.ok) { toast.error('Failed to update week'); return }
@@ -131,7 +133,7 @@ export default function PollManager() {
     try {
       const r = await fetch('/api/weeks/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ week, deadline }),
       })
       if (!r.ok) { toast.error('Failed to update deadline'); return }
@@ -145,7 +147,7 @@ export default function PollManager() {
     try {
       const r = await fetch('/api/ballots/seed-mock', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ count: mockCount }),
       })
       const data = await r.json()
@@ -159,7 +161,7 @@ export default function PollManager() {
 
   const clearMock = async () => {
     try {
-      const r = await fetch('/api/ballots/clear-mock', { method: 'POST' })
+      const r = await fetch('/api/ballots/clear-mock', { method: 'POST', headers: authHeaders() })
       const data = await r.json()
       if (!r.ok) { toast.error(data.error || 'Failed to clear'); return }
       toast.success(`Cleared ${data.deleted} mock ballots`)
@@ -171,7 +173,7 @@ export default function PollManager() {
     try {
       const r = await fetch('/api/schedule', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(schedForm),
       })
       const data = await r.json()
@@ -183,7 +185,7 @@ export default function PollManager() {
 
   const runNow = async () => {
     try {
-      const r = await fetch('/api/schedule/run-now', { method: 'POST' })
+      const r = await fetch('/api/schedule/run-now', { method: 'POST', headers: authHeaders() })
       if (!r.ok) { toast.error('Failed to trigger download'); return }
       toast.success('Data download started — check log for progress')
       setTimeout(fetchSchedule, 5000)

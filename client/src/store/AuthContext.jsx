@@ -62,16 +62,18 @@ export function AuthProvider({ children }) {
     // Dev-only backdoor — creates/returns admin user without Google
     // In production this would be removed
     try {
-      const r = await fetch('/api/auth/admin-dev', { method: 'POST' })
+      const r = await fetch('/api/auth/admin-dev', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'stevetheproductmanager@gmail.com' }),
+      })
       if (!r.ok) throw new Error()
       const data = await r.json()
       localStorage.setItem(TOKEN_KEY, data.token)
       setToken(data.token)
       setUser(data.user)
-    } catch {
-      // Fallback to stub if endpoint doesn't exist
-      const stub = { id: 'admin_1', name: 'Admin', email: 'admin@pollposition.com', avatar: null, role: 'admin' }
-      setUser(stub)
+    } catch (err) {
+      console.error('Dev admin login failed:', err)
     }
   }, [])
 

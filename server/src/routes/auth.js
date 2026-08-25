@@ -58,13 +58,18 @@ export default function makeAuthRouter() {
     }
   });
 
-  // DEV ONLY — admin backdoor (remove in production)
+  // DEV ONLY — admin backdoor, locked to the one real admin account.
+  // Disabled entirely in production (NODE_ENV check) as a second layer.
+  const DEV_ADMIN_EMAIL = 'stevetheproductmanager@gmail.com';
   router.post('/admin-dev', async (req, res) => {
     if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'Not found' });
+    if (req.body?.email !== DEV_ADMIN_EMAIL) {
+      return res.status(403).json({ error: 'Dev admin login is locked to the owner account' });
+    }
     try {
       const user = await User.findOneAndUpdate(
-        { email: 'admin@pollposition.com' },
-        { name: 'Admin', email: 'admin@pollposition.com', role: 'admin', $setOnInsert: { googleId: null } },
+        { email: DEV_ADMIN_EMAIL },
+        { name: 'Steve', email: DEV_ADMIN_EMAIL, role: 'admin', $setOnInsert: { googleId: null } },
         { upsert: true, new: true }
       );
       const token = jwt.sign(

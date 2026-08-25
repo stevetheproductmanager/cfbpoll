@@ -8,6 +8,7 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
 import { makeCfbdClient } from './cfbdClient.js';
 import { ENDPOINTS } from './endpoints.js';
 import { writeJson, readJson } from './save.js';
@@ -15,6 +16,7 @@ import { log } from './utils/logger.js';
 import { connectDB } from './db.js';
 import makeTeamsRouter from './routes/teams.js';
 import makeAuthRouter from './routes/auth.js';
+import { requireAuth, requireAdmin } from './middleware/auth.js';
 
 // Models
 import Team from './models/Team.js';
@@ -28,6 +30,9 @@ import { sendEmail, getEmailLog, deadlineReminderEmail, weeklyRecapEmail } from 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 
 const app = express();
+// Heroku (and most PaaS) sit behind a reverse proxy — trust its X-Forwarded-For
+// so req.ip (and rate-limiting keyed on it) reflects the real client, not the router.
+app.set('trust proxy', 1);
 
 // ---- Scheduled Data Download ----
 let scheduledTask = null;
@@ -102,6 +107,32 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('dev'));
 
+// ---- Rate limiting ----
+// Generous baseline across the whole API (read-heavy: rankings, resumes, logos...).
+app.use('/api', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests — please slow down and try again shortly.' },
+}));
+// Tighter limit on auth (brute-force / token-minting abuse).
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts — please try again shortly.' },
+});
+// Tighter limit on ballot writes (one real voter shouldn't need many submits/min).
+const ballotWriteLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many ballot changes — please slow down.' },
+});
+
 const {
   CFBD_API_KEY,
   CFBD_BASE_URL = 'https://apinext.collegefootballdata.com',
@@ -116,7 +147,7 @@ const cfbd = makeCfbdClient({ baseURL: CFBD_BASE_URL, apiKey: CFBD_API_KEY });
 
 
 // Auth routes
-app.use('/api/auth', makeAuthRouter());
+app.use('/api/auth', authLimiter, makeAuthRouter());
 
 // ⬇️ Mount the router (it will expose /api/teams/season-stats and /api/teams/compare)
 app.use('/api/teams', makeTeamsRouter({
@@ -207,7 +238,7 @@ async function tryCandidates(year, candidates) {
   return { ok: false, ...last };
 }
 
-app.post('/api/download', async (req, res) => {
+app.post('/api/download', requireAdmin, async (req, res) => {
   try {
     const year = Number(req.body?.year || 2025);
     const results = [];
@@ -347,7 +378,7 @@ app.get('/api/weeks', async (req, res) => {
 });
 
 // POST /api/weeks/advance
-app.post('/api/weeks/advance', async (req, res) => {
+app.post('/api/weeks/advance', requireAdmin, async (req, res) => {
   const season = Number(req.body.season || 2025);
   const current = await Week.findOne({ season }).sort({ week: -1 });
   if (current) {
@@ -361,7 +392,7 @@ app.post('/api/weeks/advance', async (req, res) => {
 });
 
 // POST /api/weeks/update
-app.post('/api/weeks/update', async (req, res) => {
+app.post('/api/weeks/update', requireAdmin, async (req, res) => {
   const { week, deadline, open, season = 2025 } = req.body;
   const wk = await Week.findOne({ season, week });
   if (!wk) return res.status(404).json({ error: 'Week not found' });
@@ -383,9 +414,11 @@ app.get('/api/ballots', async (req, res) => {
 });
 
 // POST /api/ballots
-app.post('/api/ballots', async (req, res) => {
-  const { userId, userName, rankings, season = 2025 } = req.body;
-  if (!userId || !Array.isArray(rankings) || rankings.length === 0 || rankings.length > 25) {
+app.post('/api/ballots', ballotWriteLimiter, requireAuth, async (req, res) => {
+  const { rankings, season = 2025 } = req.body;
+  const userId = req.user.id;
+  const userName = req.user.name;
+  if (!Array.isArray(rankings) || rankings.length === 0 || rankings.length > 25) {
     return res.status(400).json({ error: 'Invalid ballot' });
   }
   const info = await getCurrentWeekInfo(season);
@@ -400,9 +433,9 @@ app.post('/api/ballots', async (req, res) => {
 });
 
 // DELETE /api/ballots/recall
-app.delete('/api/ballots/recall', async (req, res) => {
-  const { userId, season = 2025 } = req.body;
-  if (!userId) return res.status(400).json({ error: 'Missing userId' });
+app.delete('/api/ballots/recall', ballotWriteLimiter, requireAuth, async (req, res) => {
+  const { season = 2025 } = req.body;
+  const userId = req.user.id;
   const info = await getCurrentWeekInfo(season);
   if (!info.isOpen) return res.status(400).json({ error: 'Voting is closed — cannot recall ballot' });
   const result = await Ballot.deleteOne({ userId, season, week: info.week });
@@ -561,7 +594,7 @@ app.get('/api/ballots/history/:userId', async (req, res) => {
 });
 
 // POST /api/ballots/seed-mock
-app.post('/api/ballots/seed-mock', async (req, res) => {
+app.post('/api/ballots/seed-mock', requireAdmin, async (req, res) => {
   const season = 2025;
   const existing = await Ballot.findOne({ userId: /^mock_/, season }).lean();
   if (existing) return res.json({ ok: true, message: 'Mock data already exists — clear first to re-seed' });
@@ -665,7 +698,7 @@ app.post('/api/ballots/seed-mock', async (req, res) => {
 });
 
 // POST /api/ballots/clear-mock
-app.post('/api/ballots/clear-mock', async (req, res) => {
+app.post('/api/ballots/clear-mock', requireAdmin, async (req, res) => {
   const result = await Ballot.deleteMany({ userId: /^mock_/ });
   res.json({ ok: true, deleted: result.deletedCount });
 });
@@ -765,14 +798,14 @@ cron.schedule('0 * * * *', async () => {
   } catch (e) { console.error('[email] reminder sweep failed:', e.message); }
 }, { timezone: 'America/Los_Angeles' });
 
-app.get('/api/email/config', async (req, res) => {
+app.get('/api/email/config', requireAdmin, async (req, res) => {
   const cfg = await loadEmailConfig();
   const { SMTP_HOST, SMTP_USER } = process.env;
   res.json({ config: { remindersEnabled: cfg.remindersEnabled, reminderLeadHours: cfg.reminderLeadHours, recapEnabled: cfg.recapEnabled },
     providerConfigured: !!(SMTP_HOST && SMTP_USER), log: getEmailLog().slice(-30) });
 });
 
-app.post('/api/email/config', async (req, res) => {
+app.post('/api/email/config', requireAdmin, async (req, res) => {
   const cfg = await loadEmailConfig();
   const { remindersEnabled, reminderLeadHours, recapEnabled } = req.body || {};
   if (remindersEnabled !== undefined) cfg.remindersEnabled = !!remindersEnabled;
@@ -782,7 +815,7 @@ app.post('/api/email/config', async (req, res) => {
   res.json({ ok: true, config: { remindersEnabled: cfg.remindersEnabled, reminderLeadHours: cfg.reminderLeadHours, recapEnabled: cfg.recapEnabled } });
 });
 
-app.post('/api/email/test', async (req, res) => {
+app.post('/api/email/test', requireAdmin, async (req, res) => {
   const to = req.body?.to;
   if (!to) return res.status(400).json({ error: 'Missing recipient' });
   const { subject, html } = deadlineReminderEmail({ name: 'there', week: '—', deadline: null, appUrl: APP_URL });
@@ -790,23 +823,23 @@ app.post('/api/email/test', async (req, res) => {
   res.json({ ok: r.ok, method: r.method, error: r.error });
 });
 
-app.post('/api/email/send-reminders', async (req, res) => {
+app.post('/api/email/send-reminders', requireAdmin, async (req, res) => {
   try { res.json({ ok: true, ...(await sendDeadlineReminders(2025, { force: !!req.body?.force })) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/email/send-recap', async (req, res) => {
+app.post('/api/email/send-recap', requireAdmin, async (req, res) => {
   try { res.json({ ok: true, ...(await sendWeeklyRecap(2025, req.body?.week ? Number(req.body.week) : undefined)) }); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ---- Schedule API ----
-app.get('/api/schedule', async (req, res) => {
+app.get('/api/schedule', requireAdmin, async (req, res) => {
   const config = await loadSchedule();
   res.json({ config: config || { enabled: false, cronExpr: '', day: 'tuesday', hour: 6, minute: 0, year: 2025 }, running: !!scheduledTask, log: scheduleLog.slice(-20) });
 });
 
-app.post('/api/schedule', async (req, res) => {
+app.post('/api/schedule', requireAdmin, async (req, res) => {
   const { enabled, day, hour, minute, year = 2025 } = req.body;
   const DAYS = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
   const dayNum = DAYS[(day || 'tuesday').toLowerCase()];
@@ -821,7 +854,7 @@ app.post('/api/schedule', async (req, res) => {
   res.json({ ok: true, config });
 });
 
-app.post('/api/schedule/run-now', async (req, res) => {
+app.post('/api/schedule/run-now', requireAdmin, async (req, res) => {
   const year = Number(req.body?.year || 2025);
   res.json({ ok: true, message: 'Download started' });
   runScheduledDownload(year);
