@@ -62,7 +62,7 @@ export default function Schedule() {
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/schedule?season=${SEASON}${week != null ? `&week=${week}` : ''}`)
+    fetch(`/api/schedule/games?season=${SEASON}${week != null ? `&week=${week}` : ''}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) { setError(d.error); return }

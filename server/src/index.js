@@ -2001,7 +2001,7 @@ async function loadFullSchedule(season) {
   return out;
 }
 
-app.get('/api/schedule', async (req, res) => {
+app.get('/api/schedule/games', async (req, res) => {
   const season = Number(req.query.season || 2025);
   const week = req.query.week ? Number(req.query.week) : null;
   try {
