@@ -15,6 +15,16 @@ const customPollSchema = new mongoose.Schema({
     sos: { type: Number, default: 0.15 },
     quality: { type: Number, default: 0.12 },
     momentum: { type: Number, default: 0.10 },
+    conference: { type: Number, default: 0 },
+  },
+  // Advanced tuning knobs (0-100 sliders); defaults reproduce the official
+  // site algorithm's fixed constants exactly — see DEFAULT_ADVANCED in rankAlgo.js.
+  advanced: {
+    movWeight: { type: Number, default: 50 },
+    sosBlend: { type: Number, default: 72 },
+    recencyDecay: { type: Number, default: 50 },
+    locationBonus: { type: Number, default: 50 },
+    badLossPenalty: { type: Number, default: 50 },
   },
   rankings: [{
     team: String,
@@ -22,7 +32,7 @@ const customPollSchema = new mongoose.Schema({
     score: Number,
     officialRank: Number,
     breakdown: {
-      efficiency: Number, results: Number, sos: Number, quality: Number, momentum: Number,
+      efficiency: Number, results: Number, sos: Number, quality: Number, momentum: Number, conference: Number,
     },
   }],
   // When true, this poll's Top 25 auto-submits as its owner's Computer ballot

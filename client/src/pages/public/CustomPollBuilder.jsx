@@ -4,8 +4,10 @@ import { useAuth } from '../../store/AuthContext.jsx'
 import { useToast } from '../../store/ToastContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
+import { DEFAULT_ADVANCED as ALGO_DEFAULT_ADVANCED } from '../../lib/rankAlgo.js'
 
-const DEFAULT_WEIGHTS = { efficiency: 38, results: 25, sos: 15, quality: 12, momentum: 10 }
+const DEFAULT_WEIGHTS = { efficiency: 38, results: 25, sos: 15, quality: 12, momentum: 10, conference: 0 }
+const DEFAULT_ADVANCED = { ...ALGO_DEFAULT_ADVANCED }
 
 const METRICS = [
   { key: 'efficiency', label: 'Efficiency', color: 'var(--brand)', desc: 'Scoring offense & defense, points per game relative to the field.' },
@@ -13,15 +15,27 @@ const METRICS = [
   { key: 'sos', label: 'Strength of Schedule', color: 'var(--warn)', desc: "How tough the team's opponents have been, iterated across the whole season." },
   { key: 'quality', label: 'Résumé Quality', color: 'var(--accent)', desc: 'Credit for beating good teams, penalties for bad losses.' },
   { key: 'momentum', label: 'Momentum', color: 'var(--err)', desc: 'Whether the team is trending up or down over its last few games.' },
+  { key: 'conference', label: 'Conference Strength', color: '#a78bfa', desc: "Credit for playing in a conference whose teams have tough schedules overall." },
 ]
 
 // Quick-start weight combos so the sliders aren't intimidating on first visit.
 const PRESETS = [
   { key: 'balanced', label: '⚖️ Balanced', weights: DEFAULT_WEIGHTS },
-  { key: 'resume', label: '📋 Résumé Voter', weights: { efficiency: 15, results: 30, sos: 20, quality: 30, momentum: 5 } },
-  { key: 'eyeball', label: '👁️ Eyeball Test', weights: { efficiency: 55, results: 25, sos: 5, quality: 5, momentum: 10 } },
-  { key: 'analytics', label: '🤖 Analytics Nerd', weights: { efficiency: 45, results: 10, sos: 25, quality: 10, momentum: 10 } },
-  { key: 'hot', label: '🔥 Hot Hand', weights: { efficiency: 25, results: 20, sos: 10, quality: 10, momentum: 35 } },
+  { key: 'resume', label: '📋 Résumé Voter', weights: { efficiency: 15, results: 30, sos: 20, quality: 30, momentum: 5, conference: 0 } },
+  { key: 'eyeball', label: '👁️ Eyeball Test', weights: { efficiency: 55, results: 25, sos: 5, quality: 5, momentum: 10, conference: 0 } },
+  { key: 'analytics', label: '🤖 Analytics Nerd', weights: { efficiency: 45, results: 10, sos: 25, quality: 10, momentum: 10, conference: 0 } },
+  { key: 'hot', label: '🔥 Hot Hand', weights: { efficiency: 25, results: 20, sos: 10, quality: 10, momentum: 35, conference: 0 } },
+  { key: 'blueblood', label: '🏛️ Blue Blood', weights: { efficiency: 30, results: 20, sos: 10, quality: 15, momentum: 5, conference: 20 } },
+]
+
+// Advanced tuning knobs — each is a 0-100 slider whose midpoint/default
+// reproduces the official site algorithm's fixed constants exactly.
+const ADVANCED_KNOBS = [
+  { key: 'movWeight', label: 'Margin of Victory', color: 'var(--brand)', desc: 'How much blowout margin matters beyond the plain win/loss.', lo: 'Ignore margin', hi: 'Reward blowouts' },
+  { key: 'sosBlend', label: 'SOS Method', color: 'var(--warn)', desc: 'Weigh strength of schedule by who you actually played vs. their overall win %.', lo: "Opponents' win %", hi: 'Who you played' },
+  { key: 'recencyDecay', label: 'Recency Weight', color: 'var(--err)', desc: 'How much a hot or cold streak over the last few games should move the needle.', lo: 'Full season', hi: 'Recent form only' },
+  { key: 'locationBonus', label: 'Home/Road Bonus', color: 'var(--ok)', desc: 'How much extra credit for road wins / extra blame for home losses.', lo: 'Ignore venue', hi: 'Big venue swing' },
+  { key: 'badLossPenalty', label: 'Bad-Loss Penalty', color: 'var(--accent)', desc: 'How harshly a loss to a weak (or FCS) opponent gets punished.', lo: 'Forgiving', hi: 'Harsh' },
 ]
 
 function Slider({ metric, value, onChange, pct }) {
@@ -37,6 +51,26 @@ function Slider({ metric, value, onChange, pct }) {
         style={{ width: '100%', accentColor: metric.color }}
       />
       <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{metric.desc}</p>
+    </div>
+  )
+}
+
+function AdvancedSlider({ knob, value, onChange }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
+        <label style={{ fontWeight: 700, fontSize: 13 }}>{knob.label}</label>
+        <span style={{ fontWeight: 800, fontSize: 13, color: knob.color }}>{value}</span>
+      </div>
+      <input
+        type="range" min={0} max={100} value={value}
+        onChange={e => onChange(knob.key, Number(e.target.value))}
+        style={{ width: '100%', accentColor: knob.color }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)' }}>
+        <span>{knob.lo}</span><span>{knob.hi}</span>
+      </div>
+      <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{knob.desc}</p>
     </div>
   )
 }
@@ -58,7 +92,10 @@ export default function CustomPollBuilder() {
   const toast = useToast()
   const [searchParams] = useSearchParams()
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS)
+  const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED)
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [result, setResult] = useState(null)
+  const [prevResult, setPrevResult] = useState(null) // previous Compute run, for "vs your last preview" diffs
   const [loading, setLoading] = useState(false)
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -87,7 +124,9 @@ export default function CustomPollBuilder() {
         sos: Math.round((w.sos || 0) * 100),
         quality: Math.round((w.quality || 0) * 100),
         momentum: Math.round((w.momentum || 0) * 100),
+        conference: Math.round((w.conference || 0) * 100),
       })
+      if (d.poll.advanced) setAdvanced({ ...DEFAULT_ADVANCED, ...d.poll.advanced })
       setName(`Remix of ${d.poll.name}`)
       toast.info(`Loaded "${d.poll.name}"'s weights — tweak and save as your own`)
     }).catch(() => {})
@@ -101,8 +140,15 @@ export default function CustomPollBuilder() {
     return out
   }, [weights, total])
 
+  // Maps team -> rank from the previous Compute run, so the results list can
+  // show "moved vs your last preview" as sliders get tweaked.
+  const prevRankMap = useMemo(() => new Map((prevResult?.rankings || []).map(t => [t.team, t.rank])), [prevResult])
+
   const setWeight = (key, value) => setWeights(prev => ({ ...prev, [key]: value }))
-  const applyPreset = (p) => { setWeights(p.weights); toast.info(`Loaded "${p.label.split(' ').slice(1).join(' ')}" weights`) }
+  const setAdvancedKnob = (key, value) => setAdvanced(prev => ({ ...prev, [key]: value }))
+  const applyPreset = (p) => { setWeights({ ...DEFAULT_WEIGHTS, ...p.weights }); toast.info(`Loaded "${p.label.split(' ').slice(1).join(' ')}" weights`) }
+  const resetAdvanced = () => setAdvanced(DEFAULT_ADVANCED)
+  const isAdvancedDefault = useMemo(() => Object.keys(DEFAULT_ADVANCED).every(k => advanced[k] === DEFAULT_ADVANCED[k]), [advanced])
 
   const compute = async () => {
     if (Object.values(weights).every(v => v === 0)) { toast.error('At least one metric must be above 0'); return }
@@ -110,10 +156,11 @@ export default function CustomPollBuilder() {
     try {
       const r = await fetch('/api/custom-polls/preview', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ season: 2025, weights }),
+        body: JSON.stringify({ season: 2025, weights, advanced }),
       })
       const d = await r.json()
       if (!r.ok) { toast.error(d.error || 'Could not compute rankings'); setLoading(false); return }
+      setPrevResult(result)
       setResult(d)
     } catch { toast.error('Could not reach server') }
     setLoading(false)
@@ -125,7 +172,7 @@ export default function CustomPollBuilder() {
     try {
       const r = await fetch('/api/custom-polls', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ season: 2025, name: name.trim(), weights }),
+        body: JSON.stringify({ season: 2025, name: name.trim(), weights, advanced }),
       })
       const d = await r.json()
       if (!r.ok) { toast.error(d.error || 'Could not save poll'); setSaving(false); return }
@@ -194,7 +241,10 @@ export default function CustomPollBuilder() {
         <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 640, margin: '0 auto' }}>
           Design your own ranking algorithm. Drag the sliders to weight what matters to you, compute a live Top 25 off this season's real data, then save it as your own poll.
         </p>
-        <Link to="/custom-poll/gallery" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>🖼️ Browse the public gallery →</Link>
+        <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 4 }}>
+          <Link to="/custom-poll/gallery" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>🖼️ Browse the public gallery →</Link>
+          <Link to="/custom-poll/diff" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>⇄ Compare two polls →</Link>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 20, alignItems: 'start' }} className="ballot-grid">
@@ -213,11 +263,31 @@ export default function CustomPollBuilder() {
           {METRICS.map(m => (
             <Slider key={m.key} metric={m} value={weights[m.key]} onChange={setWeight} pct={pct[m.key]} />
           ))}
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 10 }}>
+            <button
+              onClick={() => setShowAdvanced(s => !s)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)' }}
+            >
+              {showAdvanced ? '▾' : '▸'} ⚙️ Advanced Tuning
+              {!isAdvancedDefault && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--brand2)', background: 'var(--brand-glow)', padding: '1px 6px', borderRadius: 6 }}>Modified</span>}
+            </button>
+            {showAdvanced && (
+              <div style={{ marginTop: 12 }}>
+                <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>Fine-tune the mechanics behind each metric above. Every knob starts at the site's official setting.</p>
+                {ADVANCED_KNOBS.map(k => (
+                  <AdvancedSlider key={k.key} knob={k} value={advanced[k.key]} onChange={setAdvancedKnob} />
+                ))}
+                <button className="btn btn-ghost" onClick={resetAdvanced} disabled={isAdvancedDefault} style={{ fontSize: 11 }}>Reset to official settings</button>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button className="btn btn-primary" onClick={compute} disabled={loading} style={{ flex: 1 }}>
               {loading ? 'Computing…' : '⚙️ Compute Rankings'}
             </button>
-            <button className="btn btn-ghost" onClick={() => setWeights(DEFAULT_WEIGHTS)} style={{ fontSize: 12 }}>Reset</button>
+            <button className="btn btn-ghost" onClick={() => { setWeights(DEFAULT_WEIGHTS); setAdvanced(DEFAULT_ADVANCED) }} style={{ fontSize: 12 }}>Reset</button>
           </div>
 
           {result && (
@@ -243,6 +313,8 @@ export default function CustomPollBuilder() {
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {result.rankings.map((t, i) => {
                   const delta = t.officialRank != null ? t.officialRank - t.rank : null // positive = ranked higher than official model
+                  const prevRank = prevRankMap.get(t.team)
+                  const prevDelta = prevRank != null ? prevRank - t.rank : null // positive = moved up since last preview
                   const isOpen = expanded === t.team
                   return (
                     <div key={t.team} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
@@ -263,19 +335,34 @@ export default function CustomPollBuilder() {
                             background: delta > 0 ? 'var(--ok-muted, rgba(46,204,113,0.12))' : 'var(--err-muted)',
                           }}>{delta > 0 ? '▲' : '▼'}{Math.abs(delta)} vs official</span>
                         )}
+                        {prevDelta != null && prevDelta !== 0 && (
+                          <span title="Moved since your last Compute run" style={{
+                            fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 6,
+                            color: prevDelta > 0 ? 'var(--ok)' : 'var(--err)', border: '1px dashed currentColor',
+                          }}>{prevDelta > 0 ? '▲' : '▼'}{Math.abs(prevDelta)} vs last try</span>
+                        )}
                         <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>{t.score}</span>
                       </div>
                       {isOpen && t.breakdown && (
-                        <div style={{ padding: '4px 16px 12px 60px', display: 'flex', flexWrap: 'wrap', gap: '4px 14px' }}>
-                          {METRICS.map(m => (
-                            <span key={m.key} style={{ fontSize: 11, color: 'var(--muted)' }}>
-                              <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>{' '}
-                              {t.breakdown[m.key] > 0 ? '+' : ''}{t.breakdown[m.key]}
-                            </span>
-                          ))}
-                          {t.officialRank != null && (
-                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>Official model: #{t.officialRank}</span>
-                          )}
+                        <div style={{ padding: '4px 16px 12px 60px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginBottom: 6 }}>
+                            {METRICS.map(m => (
+                              <span key={m.key} style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>{' '}
+                                {t.breakdown[m.key] > 0 ? '+' : ''}{t.breakdown[m.key]}
+                              </span>
+                            ))}
+                            {t.officialRank != null && (
+                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>Official model: #{t.officialRank}</span>
+                            )}
+                          </div>
+                          {/* Formula transparency: show the actual weighted sum that produced this team's score. */}
+                          <div style={{ fontSize: 10.5, color: 'var(--muted)', fontFamily: 'monospace', background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', lineHeight: 1.6 }}>
+                            {METRICS.filter(m => (pct[m.key] || 0) > 0).map((m, mi) => (
+                              <span key={m.key}>{mi > 0 ? ' + ' : ''}{pct[m.key]}%×{t.breakdown[m.key]}<span style={{ opacity: 0.7 }}> ({m.label})</span></span>
+                            ))}
+                            {' '}≈ score {t.score}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -311,6 +398,7 @@ export default function CustomPollBuilder() {
                       title={p.published ? 'Stop auto-submitting this as your Computer ballot' : 'Auto-submit this as your Computer ballot each week + list in the public gallery'}
                     >{p.published ? '⏸ Unpublish' : '📡 Publish'}</button>
                     <Link to={`/custom-poll/${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none' }}>View</Link>
+                    <Link to={`/custom-poll/diff?a=${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none' }}>⇄ Compare</Link>
                     <ShareButton title={p.name} text={`Check out my custom computer poll "${p.name}" on Poll Position`} url={`${window.location.origin}/custom-poll/${p._id}`} />
                     <button className="btn btn-ghost" onClick={() => deletePoll(p._id)} style={{ fontSize: 11, padding: '4px 10px', color: 'var(--err)' }}>Delete</button>
                   </div>

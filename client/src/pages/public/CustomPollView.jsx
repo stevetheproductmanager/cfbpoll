@@ -3,8 +3,8 @@ import { useParams, Link } from 'react-router-dom'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
 
-const METRIC_LABELS = { efficiency: 'Efficiency', results: 'Results', sos: 'SOS', quality: 'Résumé Quality', momentum: 'Momentum' }
-const METRIC_COLORS = { efficiency: 'var(--brand)', results: 'var(--ok)', sos: 'var(--warn)', quality: 'var(--accent)', momentum: 'var(--err)' }
+const METRIC_LABELS = { efficiency: 'Efficiency', results: 'Results', sos: 'SOS', quality: 'Résumé Quality', momentum: 'Momentum', conference: 'Conf. Strength' }
+const METRIC_COLORS = { efficiency: 'var(--brand)', results: 'var(--ok)', sos: 'var(--warn)', quality: 'var(--accent)', momentum: 'var(--err)', conference: '#a78bfa' }
 
 export default function CustomPollView() {
   const { id } = useParams()
@@ -56,6 +56,7 @@ export default function CustomPollView() {
           ))}
         </div>
         <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <Link to={`/custom-poll/diff?a=${poll._id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}>⇄ Compare</Link>
           <Link to={`/custom-poll?remix=${poll._id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}>🔀 Remix</Link>
           <ShareButton title={poll.name} text={`Check out this custom computer poll "${poll.name}" on Poll Position`} />
         </div>

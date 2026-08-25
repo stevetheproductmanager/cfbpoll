@@ -1374,15 +1374,15 @@ app.get('/api/teams/resumes', async (req, res) => {
 // ---- Custom Computer Polls — user-tunable ranking engine ----
 // Reuses the same underlying game/efficiency data as the site's official
 // computer model (rankAlgo.js), just with user-chosen component weights.
-async function computeCustomRanking(season, weights) {
+async function computeCustomRanking(season, weights, advanced) {
   const teamsRaw = await readJson(Number(season), 'teams');
   const gamesRaw = await readJson(Number(season), 'games-regular');
   const spRaw = await readJson(Number(season), 'sp-ratings') || [];
   if (!teamsRaw || !gamesRaw) throw new Error(`No CFBD data for season ${season} — an admin needs to download it first`);
-  const ranked = rankTeams({ teamsRaw, gamesRaw, spRaw, weights });
-  // Official (default-weight) ranking, computed from the same underlying data,
-  // so each custom poll can show how it diverges from the site's model.
-  const official = rankTeams({ teamsRaw, gamesRaw, spRaw, weights: null });
+  const ranked = rankTeams({ teamsRaw, gamesRaw, spRaw, weights, advanced });
+  // Official (default-weight, default-tuning) ranking, computed from the same
+  // underlying data, so each custom poll can show how it diverges from the site's model.
+  const official = rankTeams({ teamsRaw, gamesRaw, spRaw, weights: null, advanced: null });
   const officialRankByTeam = new Map(official.map(t => [t.name, t.rank]));
   return ranked.slice(0, 25).map(t => ({
     team: t.name, rank: t.rank, score: +((t.score || 0).toFixed(4)),
@@ -1396,15 +1396,28 @@ async function computeCustomRanking(season, weights) {
       sos: +((t.sos || 0).toFixed(3)),
       quality: +((t.quality || 0).toFixed(3)),
       momentum: +((t.momentum || 0).toFixed(3)),
+      conference: +((t.confPct ?? 0.5).toFixed(3)),
     },
   }));
 }
 
 function sanitizeWeights(w) {
-  const keys = ['efficiency', 'results', 'sos', 'quality', 'momentum'];
+  const keys = ['efficiency', 'results', 'sos', 'quality', 'momentum', 'conference'];
   const out = {};
   for (const k of keys) out[k] = Math.max(0, Math.min(1, Number(w?.[k]) || 0));
   if (Object.values(out).every(v => v === 0)) return null;
+  return out;
+}
+
+// Advanced tuning knobs are all optional 0-100 sliders; anything missing/invalid
+// falls back to the neutral default that reproduces the official algorithm.
+const DEFAULT_ADVANCED = { movWeight: 50, sosBlend: 72, recencyDecay: 50, locationBonus: 50, badLossPenalty: 50 };
+function sanitizeAdvanced(a) {
+  const out = {};
+  for (const k of Object.keys(DEFAULT_ADVANCED)) {
+    const v = Number(a?.[k]);
+    out[k] = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : DEFAULT_ADVANCED[k];
+  }
   return out;
 }
 
@@ -1412,10 +1425,11 @@ function sanitizeWeights(w) {
 app.post('/api/custom-polls/preview', requireAuth, async (req, res) => {
   const season = Number(req.body.season || 2025);
   const weights = sanitizeWeights(req.body.weights);
+  const advanced = sanitizeAdvanced(req.body.advanced);
   if (!weights) return res.status(400).json({ error: 'At least one weight must be greater than 0' });
   try {
-    const rankings = await computeCustomRanking(season, weights);
-    res.json({ season, weights, rankings });
+    const rankings = await computeCustomRanking(season, weights, advanced);
+    res.json({ season, weights, advanced, rankings });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -1425,11 +1439,12 @@ app.post('/api/custom-polls', requireAuth, async (req, res) => {
   const season = Number(req.body.season || 2025);
   const name = (req.body.name || '').trim().slice(0, 60);
   const weights = sanitizeWeights(req.body.weights);
+  const advanced = sanitizeAdvanced(req.body.advanced);
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (!weights) return res.status(400).json({ error: 'At least one weight must be greater than 0' });
   try {
-    const rankings = await computeCustomRanking(season, weights);
-    const poll = await CustomPoll.create({ userId: req.user.id, userName: req.user.name || 'Anonymous', name, season, weights, rankings });
+    const rankings = await computeCustomRanking(season, weights, advanced);
+    const poll = await CustomPoll.create({ userId: req.user.id, userName: req.user.name || 'Anonymous', name, season, weights, advanced, rankings });
     res.json({ ok: true, poll });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1452,7 +1467,7 @@ cron.schedule('30 5 * * *', async () => {
     let ok = 0, failed = 0;
     for (const poll of polls) {
       try {
-        poll.rankings = await computeCustomRanking(poll.season, poll.weights);
+        poll.rankings = await computeCustomRanking(poll.season, poll.weights, poll.advanced);
         await poll.save();
         await publishBallotForPoll(poll);
         ok++;
@@ -1468,7 +1483,7 @@ app.get('/api/custom-polls/gallery', async (req, res) => {
   const season = Number(req.query.season || 2025);
   const polls = await CustomPoll.find({ published: true, season })
     .sort({ updatedAt: -1 }).limit(50)
-    .select('name userName season weights rankings updatedAt').lean();
+    .select('name userName season weights advanced rankings updatedAt').lean();
   res.json({ polls });
 });
 
@@ -1504,7 +1519,7 @@ app.post('/api/custom-polls/:id/recompute', requireAuth, async (req, res) => {
   if (!poll) return res.status(404).json({ error: 'Poll not found' });
   if (poll.userId !== req.user.id) return res.status(403).json({ error: 'Not your poll' });
   try {
-    poll.rankings = await computeCustomRanking(poll.season, poll.weights);
+    poll.rankings = await computeCustomRanking(poll.season, poll.weights, poll.advanced);
     await poll.save();
     if (poll.published) await publishBallotForPoll(poll).catch(() => {});
     res.json({ ok: true, poll });

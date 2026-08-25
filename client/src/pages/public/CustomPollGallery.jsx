@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 
-const METRIC_LABELS = { efficiency: 'Efficiency', results: 'Results', sos: 'SOS', quality: 'Quality', momentum: 'Momentum' }
+const METRIC_LABELS = { efficiency: 'Efficiency', results: 'Results', sos: 'SOS', quality: 'Quality', momentum: 'Momentum', conference: 'Conf. Strength' }
 
 // "Computer crowd" aggregate — average rank of each team across every
 // published poll, so visitors can see what the community of custom
@@ -88,6 +88,7 @@ export default function CustomPollGallery() {
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <Link to={`/custom-poll/${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none', flex: 1, textAlign: 'center' }}>View Full 25</Link>
+                    <Link to={`/custom-poll/diff?a=${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none' }} title="Compare against another poll">⇄</Link>
                     <Link to={`/custom-poll?remix=${p._id}`} className="btn btn-primary" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none', flex: 1, textAlign: 'center' }}>🔀 Remix</Link>
                   </div>
                 </div>

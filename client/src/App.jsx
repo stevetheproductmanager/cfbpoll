@@ -17,6 +17,7 @@ import Legal from './pages/public/Legal.jsx'
 import CustomPollBuilder from './pages/public/CustomPollBuilder.jsx'
 import CustomPollView from './pages/public/CustomPollView.jsx'
 import CustomPollGallery from './pages/public/CustomPollGallery.jsx'
+import CustomPollDiff from './pages/public/CustomPollDiff.jsx'
 import PublicTeamCompare from './pages/public/TeamCompare.jsx'
 import WeeklyReveal from './pages/public/WeeklyReveal.jsx'
 import GamePicks from './pages/public/GamePicks.jsx'
@@ -148,6 +149,7 @@ export default function App() {
             <Route path="legal" element={<Legal />} />
             <Route path="custom-poll" element={<CustomPollBuilder />} />
             <Route path="custom-poll/gallery" element={<CustomPollGallery />} />
+            <Route path="custom-poll/diff" element={<CustomPollDiff />} />
             <Route path="custom-poll/:id" element={<CustomPollView />} />
             <Route path="team/:name" element={<TeamPage />} />
             <Route path="methodology" element={<Methodology />} />
