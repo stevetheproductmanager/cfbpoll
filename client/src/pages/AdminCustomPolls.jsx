@@ -255,10 +255,27 @@ function CoveragePanel() {
   const toast = useToast()
   const { authHeaders } = useAuth()
   const [data, setData] = useState(null)
+  const [pruning, setPruning] = useState(false)
 
-  useEffect(() => {
+  const load = () => {
     fetch('/api/admin/data-coverage', { headers: authHeaders() }).then(r => r.json()).then(setData).catch(() => toast.error('Failed to load data coverage'))
-  }, [])
+  }
+  useEffect(() => { load() }, [])
+
+  const orphanedTotal = data?.seasons?.reduce((n, s) => n + (s.orphanedSlugs?.length || 0), 0) || 0
+
+  const prune = async () => {
+    if (!window.confirm(`Delete ${orphanedTotal} orphaned data row(s) left over from removed/renamed endpoints?`)) return
+    setPruning(true)
+    try {
+      const r = await fetch('/api/admin/data-coverage/prune-orphaned', { method: 'POST', headers: authHeaders() })
+      const d = await r.json()
+      if (!r.ok) { toast.error(d.error || 'Prune failed'); return }
+      toast.success(`Deleted ${d.deleted} orphaned row(s)`)
+      load()
+    } catch { toast.error('Could not reach server') }
+    finally { setPruning(false) }
+  }
 
   if (!data) return <p className="small">Loading...</p>
 
@@ -267,6 +284,14 @@ function CoveragePanel() {
       <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
         Core endpoints (needed for rankings/backtesting): {data.coreSlugs.join(', ')}
       </p>
+      {orphanedTotal > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--warn-muted, rgba(250,204,21,0.1))', border: '1px solid var(--warn)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12 }}>⚠️ {orphanedTotal} row(s) saved under endpoints that no longer exist (e.g. removed/renamed CFBD endpoints) — safe to delete.</span>
+          <button className="btn btn-ghost" onClick={prune} disabled={pruning} style={{ fontSize: 11, padding: '4px 10px' }}>
+            {pruning ? 'Deleting…' : 'Delete orphaned rows'}
+          </button>
+        </div>
+      )}
       {data.seasons.length === 0 ? <p className="small">No CFBD data downloaded yet.</p> : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -275,6 +300,7 @@ function CoveragePanel() {
                 <th style={{ padding: '6px' }}>Season</th>
                 <th style={{ padding: '6px' }}>Core complete?</th>
                 <th style={{ padding: '6px' }}>Endpoints downloaded</th>
+                <th style={{ padding: '6px' }}>Orphaned</th>
               </tr>
             </thead>
             <tbody>
@@ -283,6 +309,7 @@ function CoveragePanel() {
                   <td style={{ padding: '6px', fontWeight: 700 }}>{s.season}</td>
                   <td style={{ padding: '6px' }}>{s.coreComplete ? '✅' : '⚠️ missing core data'}</td>
                   <td style={{ padding: '6px', color: 'var(--muted)' }}>{s.totalDownloaded}/{s.totalEndpoints}</td>
+                  <td style={{ padding: '6px', color: 'var(--muted)' }}>{s.orphanedSlugs?.length ? s.orphanedSlugs.join(', ') : '—'}</td>
                 </tr>
               ))}
             </tbody>

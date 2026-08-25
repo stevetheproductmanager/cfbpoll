@@ -229,15 +229,26 @@ app.get('/api/dashboard', async (req, res) => {
   }
 });
 
+// A 200 status alone isn't proof of a real payload — a stale/renamed endpoint
+// can still resolve to a 200 HTML page (Swagger docs, a proxy's catch-all,
+// etc.) rather than a 404, and that garbage would otherwise get cached and
+// silently masquerade as downloaded data forever. Reject anything that isn't
+// actual JSON (axios only auto-parses JSON responses; anything else — e.g. an
+// HTML string — comes through as a raw string).
+function looksLikeRealPayload(data) {
+  if (typeof data === 'string') return false;
+  return data != null;
+}
+
 async function tryCandidates(year, candidates) {
   let last = { status: 0, data: null, path: null };
   for (const tmpl of candidates) {
     const path = tmpl.replaceAll('{year}', String(year)).replaceAll('{season}', String(year));
     const { status, data } = await cfbd.get(path);
-    if (status === 200) {
+    if (status === 200 && looksLikeRealPayload(data)) {
       return { ok: true, path, data };
     }
-    last = { status, data, path };
+    last = { status, data: status === 200 ? 'Got HTTP 200 but the response wasn\'t JSON — likely a stale/renamed endpoint' : data, path };
     await new Promise(r => setTimeout(r, 120));
   }
   return { ok: false, ...last };
@@ -1277,13 +1288,32 @@ app.get('/api/admin/data-coverage', requireAdmin, async (req, res) => {
       if (!bySeason.has(r.season)) bySeason.set(r.season, {});
       bySeason.get(r.season)[r.slug] = r.downloadedAt;
     }
+    const currentSlugs = new Set(ENDPOINTS.map(ep => ep.slug));
     const seasons = [...bySeason.keys()].sort((a, b) => b - a).map(season => {
       const slugMap = bySeason.get(season);
       const slugs = ENDPOINTS.map(ep => ({ slug: ep.slug, downloadedAt: slugMap[ep.slug] || null }));
+      // Slugs saved under an old endpoint config that no longer exists (e.g. a
+      // renamed/removed CFBD endpoint) — harmless, but worth surfacing since
+      // they're often stale data an admin should prune.
+      const orphanedSlugs = Object.keys(slugMap).filter(s => !currentSlugs.has(s));
       const coreComplete = CORE_SLUGS.every(s => slugMap[s]);
-      return { season, slugs, coreComplete, totalDownloaded: Object.keys(slugMap).length, totalEndpoints: ENDPOINTS.length };
+      return { season, slugs, orphanedSlugs, coreComplete, totalDownloaded: Object.keys(slugMap).length, totalEndpoints: ENDPOINTS.length };
     });
     res.json({ seasons, coreSlugs: CORE_SLUGS });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Deletes any cached CfbdData rows whose slug no longer matches a configured
+// endpoint (e.g. leftovers from a removed/broken endpoint like the old
+// 'divisions' or 'games-spreads' entries). Never touches season:0 config rows.
+app.post('/api/admin/data-coverage/prune-orphaned', requireAdmin, async (req, res) => {
+  try {
+    const currentSlugs = ENDPOINTS.map(ep => ep.slug);
+    const result = await CfbdData.deleteMany({ season: { $gt: 0 }, slug: { $nin: currentSlugs } });
+    await logAction(req, 'data.prune-orphaned', `${result.deletedCount} row(s)`);
+    res.json({ ok: true, deleted: result.deletedCount });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

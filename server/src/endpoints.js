@@ -1,7 +1,6 @@
 
 export const ENDPOINTS = [
   { slug: 'conferences', candidates: ['/conferences'] },
-  { slug: 'divisions', candidates: ['/divisions'] },
   { slug: 'venues', candidates: ['/venues'] },
 
   { slug: 'teams', candidates: ['/teams?year={year}', '/teams?season={year}'] },
@@ -10,9 +9,11 @@ export const ENDPOINTS = [
   { slug: 'games-regular', candidates: ['/games?year={year}&seasonType=regular', '/games?season={year}&seasonType=regular'] },
   { slug: 'games-postseason', candidates: ['/games?year={year}&seasonType=postseason', '/games?season={year}&seasonType=postseason'] },
 
+  // Betting lines: /lines already returns spread + over/under per game, so
+  // there's no separate spreads/totals endpoint to call. (Previously there
+  // were 'games-spreads'/'games-totals' entries pointing at URLs CFBD doesn't
+  // serve — removed since nothing in the app ever read them anyway.)
   { slug: 'games-lines', candidates: ['/lines?year={year}', '/betting/lines?season={year}'] },
-  { slug: 'games-spreads', candidates: ['/lines/spreads?year={year}', '/betting/lines/spreads?season={year}'] },
-  { slug: 'games-totals', candidates: ['/lines/totals?year={year}', '/betting/lines/totals?season={year}'] },
 
   { slug: 'polls-rankings', candidates: ['/rankings?year={year}', '/rankings?season={year}'] },
   { slug: 'records', candidates: ['/records?year={year}', '/records?season={year}'] },
