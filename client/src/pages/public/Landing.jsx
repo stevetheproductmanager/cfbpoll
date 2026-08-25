@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
 import { useFavorites } from '../../store/FavoritesContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
+import DarkHorseTracker from '../../components/DarkHorseTracker.jsx'
 
 const FEATURES = [
   { icon: '🗳️', title: 'Your Ballot, Your Voice', desc: 'Rank your Top 25 each week. Drag, drop, done. Your vote actually counts.', to: '/ballot' },
@@ -10,6 +11,11 @@ const FEATURES = [
   { icon: '🏆', title: 'Voter Leaderboard', desc: 'See who nails the consensus and who goes bold. Your accuracy is tracked all season.', to: '/leaderboard' },
   { icon: '📈', title: 'Visual Poll', desc: 'Explore the rankings as tiers, cards, or bubbles. Track movement week over week.', to: '/visual' },
   { icon: '⚙️', title: 'Build a Computer Poll', desc: 'Design your own ranking algorithm with sliders, compute a live Top 25, and save it as your own poll.', to: '/custom-poll' },
+  { icon: '🎬', title: 'Weekly Reveal', desc: 'Watch this week\'s Top 25 count down from #25 to #1, reveal-show style.', to: '/reveal' },
+  { icon: '⚔️', title: 'Team Comparison', desc: 'Pick two teams and compare rank, record, and recent results side by side.', to: '/compare' },
+  { icon: '🏈', title: 'Weekly Game Picks', desc: 'Pick winners for this week\'s games — a lighter, more frequent way to play.', to: '/picks' },
+  { icon: '🏆', title: 'CFP Projection', desc: 'A 12-team bracket projected live off the current Top 25.', to: '/cfp-projection' },
+  { icon: '🎖️', title: 'Heisman Straw Poll', desc: 'Vote for the best player in the country, ranked by real season stats.', to: '/heisman' },
 ]
 
 function LiveCountdown({ deadline }) {
@@ -225,9 +231,14 @@ export default function Landing() {
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
           {user ? (
-            <Link to="/ballot" className="btn btn-primary" style={{ padding: '12px 32px', fontSize: 16, fontWeight: 700, borderRadius: 12, textDecoration: 'none' }}>
-              Submit Your Ballot
-            </Link>
+            <>
+              <Link to="/ballot" className="btn btn-primary" style={{ padding: '12px 32px', fontSize: 16, fontWeight: 700, borderRadius: 12, textDecoration: 'none' }}>
+                Submit Your Ballot
+              </Link>
+              <Link to="/for-you" className="btn" style={{ padding: '12px 24px', fontSize: 16, borderRadius: 12, textDecoration: 'none' }}>
+                ⭐ For You
+              </Link>
+            </>
           ) : (
             <Link to="/login" className="btn btn-primary" style={{ padding: '12px 32px', fontSize: 16, fontWeight: 700, borderRadius: 12, textDecoration: 'none' }}>
               Get Started — It's Free
@@ -243,6 +254,7 @@ export default function Landing() {
       <DashboardCard dashboard={dashboard} />
       <YourTeamsPanel />
       <BiggestMovers />
+      <DarkHorseTracker />
 
       {/* Features */}
       <div style={{

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import FavoriteStar from '../../components/FavoriteStar.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
+import TeamComments from '../../components/TeamComments.jsx'
 
 function Sparkline({ points }) {
   const ranked = points.filter(p => p.rank)
@@ -105,7 +106,7 @@ export default function TeamPage() {
       )}
 
       {/* Who's voting for them this week */}
-      <div className="card" style={{ marginTop: 0 }}>
+      <div className="card" style={{ marginTop: 0, marginBottom: 12 }}>
         <h3 style={{ marginBottom: 8 }}>Week {data?.week} Voters</h3>
         {data?.voters?.length ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -118,6 +119,8 @@ export default function TeamPage() {
           </div>
         ) : <p style={{ color: 'var(--muted)', fontSize: 13 }}>No voter has ranked this team this week.</p>}
       </div>
+
+      <TeamComments team={name} />
     </div>
   )
 }

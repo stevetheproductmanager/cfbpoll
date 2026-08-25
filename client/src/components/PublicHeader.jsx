@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../store/AuthContext.jsx'
 import ThemeToggle from './ThemeToggle.jsx'
+import GlobalSearch from './GlobalSearch.jsx'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Home' },
@@ -9,7 +10,9 @@ const NAV_ITEMS = [
   { to: '/visual', label: 'Visual Poll' },
   { to: '/leaderboard', label: 'Leaderboard' },
   { to: '/custom-poll', label: 'Computer Poll' },
+  { to: '/picks', label: 'Game Picks' },
   { to: '/ballot', label: 'My Ballot', auth: true },
+  { to: '/for-you', label: 'For You', auth: true },
   { to: '/admin', label: 'Admin', admin: true },
 ]
 
@@ -77,6 +80,7 @@ export default function PublicHeader() {
 
         {/* Desktop actions */}
         <div className="pp-desktop-actions" style={{ alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <GlobalSearch />
           <ThemeToggle />
           {user ? (
             <>
@@ -106,6 +110,7 @@ export default function PublicHeader() {
       {/* Mobile dropdown menu */}
       {menuOpen && (
         <div className="pp-mobile-menu">
+          <div style={{ marginBottom: 8 }}><GlobalSearch /></div>
           {navLinks.map(n => (
             <Link
               key={n.to}

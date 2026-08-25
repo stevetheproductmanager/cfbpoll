@@ -612,6 +612,7 @@ export default function PublicRankings() {
   const [resumes, setResumes] = useState(null)
   const [detailTeam, setDetailTeam] = useState(null)
   const [ballotFilter, setBallotFilter] = useState('all') // all | human | computer
+  const [confFilter, setConfFilter] = useState('all')
 
   useEffect(() => { fetch('/api/teams/resumes').then(r => r.json()).then(d => { if (!d.error) setResumes(d) }).catch(() => {}) }, [])
 
@@ -641,8 +642,16 @@ export default function PublicRankings() {
   useEffect(() => { loadWeeks() }, [])
   useEffect(() => { if (selectedWeek !== null) loadData(selectedWeek, ballotFilter) }, [selectedWeek, ballotFilter])
 
-  const top25 = useMemo(() => data?.rankings?.slice(0, 25) || [], [data])
-  const receiving = useMemo(() => data?.rankings?.slice(25) || [], [data])
+  const conferences = useMemo(() => {
+    if (!resumes?.teams) return []
+    return [...new Set(Object.values(resumes.teams).map(t => t.conference).filter(Boolean))].sort()
+  }, [resumes])
+
+  const teamConf = useCallback((team) => resumes?.teams?.[team]?.conference || null, [resumes])
+  const matchesConf = useCallback((team) => confFilter === 'all' || teamConf(team) === confFilter, [confFilter, teamConf])
+
+  const top25 = useMemo(() => (data?.rankings || []).filter(t => matchesConf(t.team)).slice(0, 25), [data, matchesConf])
+  const receiving = useMemo(() => (data?.rankings || []).filter(t => matchesConf(t.team)).slice(25), [data, matchesConf])
   const maxVariance = useMemo(() => Math.max(...(data?.rankings || []).map(t => t.variance), 1), [data])
 
   const currentWeekCfg = useMemo(() => {
@@ -709,8 +718,8 @@ export default function PublicRankings() {
         </div>
       )}
 
-      {/* Human vs Computer ballot filter */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+      {/* Human vs Computer ballot filter + conference filter */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
         <div style={{ display: 'inline-flex', background: 'var(--panel-2)', border: '1px solid var(--border-strong)', borderRadius: 10, padding: 3, gap: 2 }}>
           {[{ key: 'all', label: 'All Ballots' }, { key: 'human', label: '🧑 Human' }, { key: 'computer', label: '🖥️ Computer' }].map(o => (
             <button key={o.key} onClick={() => setBallotFilter(o.key)}
@@ -720,6 +729,12 @@ export default function PublicRankings() {
             </button>
           ))}
         </div>
+        {conferences.length > 0 && (
+          <select className="input" value={confFilter} onChange={e => setConfFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px' }}>
+            <option value="all">All Conferences</option>
+            {conferences.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
       </div>
 
       {/* KPIs */}

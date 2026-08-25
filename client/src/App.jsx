@@ -17,6 +17,12 @@ import Legal from './pages/public/Legal.jsx'
 import CustomPollBuilder from './pages/public/CustomPollBuilder.jsx'
 import CustomPollView from './pages/public/CustomPollView.jsx'
 import CustomPollGallery from './pages/public/CustomPollGallery.jsx'
+import PublicTeamCompare from './pages/public/TeamCompare.jsx'
+import WeeklyReveal from './pages/public/WeeklyReveal.jsx'
+import GamePicks from './pages/public/GamePicks.jsx'
+import CFPProjection from './pages/public/CFPProjection.jsx'
+import Heisman from './pages/public/Heisman.jsx'
+import ForYou from './pages/public/ForYou.jsx'
 import TeamPage from './pages/public/TeamPage.jsx'
 import Methodology from './pages/public/Methodology.jsx'
 
@@ -145,6 +151,12 @@ export default function App() {
             <Route path="custom-poll/:id" element={<CustomPollView />} />
             <Route path="team/:name" element={<TeamPage />} />
             <Route path="methodology" element={<Methodology />} />
+            <Route path="compare" element={<PublicTeamCompare />} />
+            <Route path="reveal" element={<WeeklyReveal />} />
+            <Route path="picks" element={<GamePicks />} />
+            <Route path="cfp-projection" element={<CFPProjection />} />
+            <Route path="heisman" element={<Heisman />} />
+            <Route path="for-you" element={<ForYou />} />
           </Route>
 
           {/* Admin */}

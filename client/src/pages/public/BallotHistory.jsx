@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
+import Badges, { computeBadges } from '../../components/Badges.jsx'
 
 // Consecutive weeks voted, counting backward from the most recent week that
 // had any ballots at all — a missed latest week breaks the streak.
@@ -103,6 +104,7 @@ export default function BallotHistory() {
           {data.weeks.length} week{data.weeks.length !== 1 ? 's' : ''} of picks
           {voterStats?.streak >= 3 && <span style={{ marginLeft: 8, color: 'var(--warn)', fontWeight: 700 }}>🔥 {voterStats.streak}-week streak</span>}
         </p>
+        <Badges badges={computeBadges({ voterStats, weeks: data.weeks })} />
       </div>
 
       {/* Back to leaderboard + share */}
@@ -120,7 +122,7 @@ export default function BallotHistory() {
             <div className="kpi"><div className="kpi-label">Leaderboard Rank</div><div className="kpi-value">#{voterStats.rank}</div></div>
           </>
         )}
-        <div className="kpi"><div className="kpi-label">Unique Teams</div><div className="kpi-value">{new Set(data.weeks.flatMap(w => w.picks)).size}</div></div>
+        <div className="kpi"><div className="kpi-label">Unique Teams</div><div className="kpi-value">{new Set(data.weeks.flatMap(w => w.picks.map(p => p.team))).size}</div></div>
         <div className="kpi"><div className="kpi-label">Most Consistent</div><div className="kpi-value" style={{ fontSize: 14 }}>{getMostConsistent(data.weeks)}</div></div>
         <div className="kpi"><div className="kpi-label">Biggest Mover</div><div className="kpi-value" style={{ fontSize: 14 }}>{getBiggestMover(data.weeks)}</div></div>
       </div>
@@ -139,9 +141,14 @@ export default function BallotHistory() {
       {weekData && (
         <div className="card" style={{ marginTop: 0, padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0 }}>Week {weekData.week} Ballot</h3>
+            <h3 style={{ margin: 0 }}>Week {weekData.week} Ballot {weekData.ballotType === 'computer' && <span style={{ fontSize: 11, marginLeft: 6 }} title="Computer ballot">🖥️</span>}</h3>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>{weekData.picks.length} teams</span>
           </div>
+          {weekData.note && (
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--panel-2)', fontSize: 13, fontStyle: 'italic', color: 'var(--text-secondary)' }}>
+              "{weekData.note}"
+            </div>
+          )}
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
               <th style={{ width: 50, textAlign: 'center' }}>Rank</th>
@@ -150,25 +157,30 @@ export default function BallotHistory() {
               <th style={{ textAlign: 'center', width: 90 }}>vs Consensus</th>
             </tr></thead>
             <tbody>
-              {weekData.picks.map((team, i) => {
-                const prevWeek = data.weeks.find(w => w.week === weekData.week - 1)
-                const prevRank = prevWeek ? prevWeek.picks.indexOf(team) + 1 : 0
-                const movement = prevRank > 0 ? prevRank - (i + 1) : null
-                const wasNew = prevWeek && prevRank === 0
+              {weekData.picks.map((pick, i) => {
+                const isBold = weekData.confidence?.[pick.team] === 'bold'
+                const consensusDiff = pick.consensusRank ? pick.rank - pick.consensusRank : null
                 return (
-                  <tr key={team} style={{ borderTop: '1px solid var(--border)' }}>
+                  <tr key={pick.team} style={{ borderTop: '1px solid var(--border)' }}>
                     <td style={{ textAlign: 'center', fontWeight: 800, fontSize: 14, color: 'var(--brand2)' }}>{i + 1}</td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <TeamLogo name={team} size={24} />
-                        <span style={{ fontWeight: 600, fontSize: 14 }}>{team}</span>
-                        {wasNew && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-muted)', padding: '1px 5px', borderRadius: 4 }}>NEW</span>}
+                        <TeamLogo name={pick.team} size={24} />
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{pick.team}</span>
+                        {pick.isNew && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-muted)', padding: '1px 5px', borderRadius: 4 }}>NEW</span>}
+                        {isBold && <span title="Marked as a bold/confident pick" style={{ fontSize: 9, fontWeight: 700, color: 'var(--warn)', background: 'var(--warn-muted, rgba(230,180,40,0.15))', padding: '1px 5px', borderRadius: 4 }}>🔥 BOLD</span>}
                       </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      {movement !== null ? <MovementBadge movement={movement} /> : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}
+                      {pick.movement !== null ? <MovementBadge movement={pick.movement} /> : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}
                     </td>
-                    <td style={{ textAlign: 'center', fontSize: 12, color: 'var(--muted)' }}>—</td>
+                    <td style={{ textAlign: 'center', fontSize: 12 }}>
+                      {pick.consensusRank ? (
+                        <span style={{ color: consensusDiff === 0 ? 'var(--muted)' : consensusDiff > 0 ? 'var(--err)' : 'var(--ok)' }}>
+                          #{pick.consensusRank}{consensusDiff ? ` (${consensusDiff > 0 ? '+' : ''}${consensusDiff})` : ''}
+                        </span>
+                      ) : <span style={{ color: 'var(--muted)' }}>NR</span>}
+                    </td>
                   </tr>
                 )
               })}
@@ -176,25 +188,19 @@ export default function BallotHistory() {
           </table>
 
           {/* Dropped teams */}
-          {weekData.week > 1 && (() => {
-            const prev = data.weeks.find(w => w.week === weekData.week - 1)
-            if (!prev) return null
-            const dropped = prev.picks.filter(t => !weekData.picks.includes(t))
-            if (!dropped.length) return null
-            return (
-              <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--panel-2)' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--err)', marginBottom: 6 }}>Dropped from ballot:</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {dropped.map(t => (
-                    <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'var(--err-muted)', borderRadius: 6, fontSize: 12 }}>
-                      <TeamLogo name={t} size={16} />
-                      <span style={{ color: 'var(--err)' }}>{t}</span>
-                    </div>
-                  ))}
-                </div>
+          {weekData.dropped?.length > 0 && (
+            <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--panel-2)' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--err)', marginBottom: 6 }}>Dropped from ballot:</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {weekData.dropped.map(t => (
+                  <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: 'var(--err-muted)', borderRadius: 6, fontSize: 12 }}>
+                    <TeamLogo name={t} size={16} />
+                    <span style={{ color: 'var(--err)' }}>{t}</span>
+                  </div>
+                ))}
               </div>
-            )
-          })()}
+            </div>
+          )}
         </div>
       )}
 
@@ -206,8 +212,8 @@ export default function BallotHistory() {
             Teams that appeared on every ballot
           </div>
           {(() => {
-            const allWeeks = data.weeks.map(w => new Set(w.picks))
-            const consistent = data.weeks[0].picks.filter(t => allWeeks.every(s => s.has(t)))
+            const allWeeks = data.weeks.map(w => new Set(w.picks.map(p => p.team)))
+            const consistent = data.weeks[0].picks.map(p => p.team).filter(t => allWeeks.every(s => s.has(t)))
             if (!consistent.length) return <div style={{ color: 'var(--muted)', fontSize: 13 }}>No team appeared on every ballot.</div>
             return (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -228,22 +234,19 @@ export default function BallotHistory() {
 
 function getMostConsistent(weeks) {
   if (weeks.length < 2) return '—'
-  const allWeeks = weeks.map(w => new Set(w.picks))
-  const consistent = weeks[0].picks.filter(t => allWeeks.every(s => s.has(t)))
+  const allWeeks = weeks.map(w => new Set(w.picks.map(p => p.team)))
+  const consistent = weeks[0].picks.map(p => p.team).filter(t => allWeeks.every(s => s.has(t)))
   return consistent[0] || '—'
 }
 
 function getBiggestMover(weeks) {
   if (weeks.length < 2) return '—'
   const last = weeks[weeks.length - 1]
-  const prev = weeks[weeks.length - 2]
   let biggest = null, biggestDiff = 0
-  for (const team of last.picks) {
-    const curRank = last.picks.indexOf(team) + 1
-    const prevRank = prev.picks.indexOf(team) + 1
-    if (prevRank === 0) continue
-    const diff = Math.abs(curRank - prevRank)
-    if (diff > biggestDiff) { biggestDiff = diff; biggest = team }
+  for (const pick of last.picks) {
+    if (pick.movement == null) continue
+    const diff = Math.abs(pick.movement)
+    if (diff > biggestDiff) { biggestDiff = diff; biggest = pick.team }
   }
   return biggest || '—'
 }

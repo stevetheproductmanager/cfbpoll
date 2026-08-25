@@ -81,7 +81,7 @@ function ResumeLine({ resume, conflict }) {
   )
 }
 
-function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDragging, locked, diff, conflict }) {
+function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDragging, locked, diff, conflict, bold, onToggleBold }) {
   return (
     <div
       data-ballot-idx={rank - 1}
@@ -122,6 +122,16 @@ function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDraggi
         </div>
         <ResumeLine resume={resume} conflict={conflict} />
       </div>
+      {onToggleBold && !locked && (
+        <button
+          onClick={e => { e.stopPropagation(); onToggleBold() }}
+          title={bold ? 'Marked as a bold pick — click to unmark' : 'Mark as a bold/confident pick'}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontSize: 15, flexShrink: 0,
+            opacity: bold ? 1 : 0.3, filter: bold ? 'none' : 'grayscale(1)',
+          }}
+        >🔥</button>
+      )}
       {onRemove && !locked && (
         <button
           onClick={e => { e.stopPropagation(); onRemove() }}
@@ -237,6 +247,8 @@ export default function MyBallot() {
   })
   const [myCustomPolls, setMyCustomPolls] = useState([])
   const [customPollId, setCustomPollId] = useState(null)
+  const [note, setNote] = useState('')
+  const [confidence, setConfidence] = useState({}) // team -> true for "bold" picks
   const searchRef = useRef(null)
   const dragState = useRef(null)
 
@@ -270,7 +282,12 @@ export default function MyBallot() {
     fetch(`/api/ballots?week=${weekInfo.current.week}`).then(r => r.json()).then(ballots => {
       const arr = Array.isArray(ballots) ? ballots : ballots.ballots || []
       const mine = arr.find(b => b.userId === user.id)
-      if (mine) { setBallot(mine.rankings); setSubmitted(true); if (mine.ballotType) setBallotType(mine.ballotType) }
+      if (mine) {
+        setBallot(mine.rankings); setSubmitted(true)
+        if (mine.ballotType) setBallotType(mine.ballotType)
+        if (mine.note) setNote(mine.note)
+        if (mine.confidence) setConfidence(mine.confidence)
+      }
       else if (prevBallot && ballot.length === 0) {
         setBallot(prevBallot)
         toast.info('Pre-filled from your last week\'s ballot')
@@ -333,8 +350,17 @@ export default function MyBallot() {
   const removeTeam = useCallback(idx => {
     const name = ballot[idx]
     setBallot(prev => prev.filter((_, i) => i !== idx))
+    setConfidence(prev => { const next = { ...prev }; delete next[name]; return next })
     toast.info(`Removed ${name}`)
   }, [ballot])
+
+  const toggleBold = useCallback(name => {
+    setConfidence(prev => {
+      const next = { ...prev }
+      if (next[name]) delete next[name]; else next[name] = true
+      return next
+    })
+  }, [])
 
   // ---- Pointer-based drag reorder (works for mouse AND touch) ----
   const onHandleDown = (e, idx) => {
@@ -382,7 +408,7 @@ export default function MyBallot() {
       const r = await fetch('/api/ballots', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ rankings: ballot, ballotType, customPollId: ballotType === 'computer' ? customPollId : null }),
+        body: JSON.stringify({ rankings: ballot, ballotType, customPollId: ballotType === 'computer' ? customPollId : null, note, confidence }),
       })
       const body = await r.json()
       if (!r.ok) { toast.error(body.error || 'Failed to submit ballot'); return }
@@ -560,6 +586,11 @@ export default function MyBallot() {
             </div>
           )}
 
+          {ballot.length > 0 && (
+            <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: -6, marginBottom: 10 }}>
+              Click 🔥 on a team to mark it a bold/confident pick.
+            </p>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}>
             {ballot.map((name, i) => (
               <TeamChip
@@ -574,9 +605,25 @@ export default function MyBallot() {
                 locked={locked}
                 diff={diffMap[name] ?? null}
                 conflict={conflictSet.has(name)}
+                bold={!!confidence[name]}
+                onToggleBold={() => toggleBold(name)}
               />
             ))}
           </div>
+
+          {ballot.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
+                Your reasoning (optional) — shown on your ballot history
+              </label>
+              <textarea
+                className="input" rows={2} maxLength={500} disabled={locked}
+                placeholder={`Why this order? e.g. "Moved X up after their road win, dropped Y after the loss to..."`}
+                value={note} onChange={e => setNote(e.target.value)}
+                style={{ width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right column - Add Teams */}

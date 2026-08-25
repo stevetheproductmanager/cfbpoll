@@ -26,6 +26,9 @@ import CfbdData from './models/CfbdData.js';
 import User from './models/User.js';
 import AdminAction from './models/AdminAction.js';
 import CustomPoll from './models/CustomPoll.js';
+import Comment from './models/Comment.js';
+import GamePick from './models/GamePick.js';
+import AwardVote from './models/AwardVote.js';
 import cron from 'node-cron';
 import { sendEmail, getEmailLog, deadlineReminderEmail, weeklyRecapEmail } from './email.js';
 
@@ -590,7 +593,7 @@ app.get('/api/ballots', async (req, res) => {
 
 // POST /api/ballots
 app.post('/api/ballots', ballotWriteLimiter, requireAuth, async (req, res) => {
-  const { rankings, season = 2025, ballotType, customPollId } = req.body;
+  const { rankings, season = 2025, ballotType, customPollId, note, confidence } = req.body;
   const userId = req.user.id;
   const userName = req.user.name;
   const type = ballotType === 'computer' ? 'computer' : 'human';
@@ -607,11 +610,21 @@ app.post('/api/ballots', ballotWriteLimiter, requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Voting is closed for this week', deadline: info.deadline });
   }
 
+  const rankingsSet = new Set(rankings.slice(0, settings.maxBallotSize));
+  const cleanConfidence = {};
+  if (confidence && typeof confidence === 'object') {
+    for (const team of Object.keys(confidence)) {
+      if (rankingsSet.has(team) && confidence[team]) cleanConfidence[team] = 'bold';
+    }
+  }
+
   const ballot = await Ballot.findOneAndUpdate(
     { userId, season, week: info.week },
     {
       userId, userName: userName || 'Anonymous', rankings: rankings.slice(0, settings.maxBallotSize), season, week: info.week,
       ballotType: type, customPollId: type === 'computer' ? (customPollId || null) : null,
+      note: (note || '').toString().trim().slice(0, 500),
+      confidence: cleanConfidence,
       submittedAt: new Date(),
     },
     { upsert: true, new: true }
@@ -793,11 +806,30 @@ app.get('/api/ballots/history/:userId', async (req, res) => {
       };
     });
     const dropped = prev ? prev.rankings.filter(t => !b.rankings.includes(t)) : [];
-    return { week: b.week, submittedAt: b.submittedAt, picks, dropped };
+    return {
+      week: b.week, submittedAt: b.submittedAt, picks, dropped,
+      note: b.note || '', confidence: b.confidence instanceof Map ? Object.fromEntries(b.confidence) : (b.confidence || {}),
+      ballotType: b.ballotType || 'human',
+    };
   });
 
   res.json({ userId: req.params.userId, userName: userBallots[0]?.userName, weeks });
 });
+
+// Realistic human-sounding names for mock voters (so profiles/leaderboard
+// read like real people during testing, not joke gamertags).
+const MOCK_FIRST_NAMES = ['James','Maria','Marcus','Ava','David','Sofia','Michael','Emma','Chris','Olivia','Daniel','Grace','Kevin','Zoe','Anthony','Layla','Brian','Nora','Justin','Priya','Tyler','Hannah','Andre','Chloe','Sam','Isabel','Jordan','Maya','Ryan','Elena','Derek','Fatima','Trevor','Rachel','Malik','Bianca','Nathan','Ashley','Omar','Julia','Caleb','Nina','Devon','Lucy','Xavier','Paige','Miguel','Renee','Aaron','Sydney'];
+const MOCK_LAST_NAMES = ['Reid','Thompson','Bennett','Ortiz','Walker','Chen','Patel','Nguyen','Foster','Griffin','Hayes','Coleman','Brooks','Sanders','Murphy','Rivera','Powell','Sullivan','Barrett','Fischer','Doyle','Vaughn','Ramirez','Cole','Barnes','Hughes','Kelley','Marsh','Dawson','Whitfield'];
+function mockName(i) {
+  const rng = seededRngLocal(i * 7919 + 13);
+  const first = MOCK_FIRST_NAMES[Math.floor(rng() * MOCK_FIRST_NAMES.length)];
+  const last = MOCK_LAST_NAMES[Math.floor(rng() * MOCK_LAST_NAMES.length)];
+  return `${first} ${last}`;
+}
+function seededRngLocal(seed) {
+  let s = seed;
+  return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+}
 
 // POST /api/ballots/seed-mock
 app.post('/api/ballots/seed-mock', requireAdmin, async (req, res) => {
@@ -807,27 +839,26 @@ app.post('/api/ballots/seed-mock', requireAdmin, async (req, res) => {
 
   const count = Math.max(1, Math.min(500, Number(req.body.count) || 8));
 
-  const NAME_PARTS = [
-    ['Coach','Gridiron','Tailgate','Bleacher','Stat','Armchair','RedZone','EndZone','Blitz','Sack','Punt','Chalk','GameDay','Snap','TD','Hail','FourthDown','Shotgun','Wildcat','OptionPlay','Scramble','Audible','Nickel','Safety','Blitz','TwoPoint','OnsideKick','HardCount','JetSweep','RPO'],
-    ['Pick','Guru','Tony','Fan','Nerd','OC','Rick','Eddie','Brenda','Master','God','Chris','Gary','Sam','Tina','Mary','Jack','Quinn','Zach','Pete','Roy','Dee','Max','Kai','Drew','Val','Ace','Ty','Bo','CJ'],
-    ['42','99','55','88','12','7','33','21','44','66','77','3','18','25','14','9','50','81','6','27','36','45','11','23','19','8','31','70','4','16'],
-  ];
-  function mockName(i) {
-    return NAME_PARTS[0][i % NAME_PARTS[0].length] + NAME_PARTS[1][i % NAME_PARTS[1].length] + NAME_PARTS[2][i % NAME_PARTS[2].length];
-  }
+  // Base rankings per week come from the site's REAL computer model, run
+  // cumulatively through actual games — not hardcoded team lists — so mock
+  // ballots reflect this season's actual data and stay accurate as it's
+  // reseeded week to week.
+  let weeklyReal;
+  try { weeklyReal = await computeWeeklyRankings(String(season)); }
+  catch (e) { return res.status(400).json({ error: `Can't seed — ${e.message}` }); }
 
-  // Base rankings per week — the "consensus" that voters vary around
-  const BASE = [
-    ['Ohio State','Georgia','Texas','Oregon','Penn State','Alabama','Ole Miss','Michigan','Tennessee','Notre Dame','LSU','USC','Missouri','Florida State','Oklahoma','Clemson','Utah','Kansas State','Washington','NC State','Louisville','Iowa','Arizona','Tulane','SMU'],
-    ['Oregon','Ohio State','Georgia','Texas','Penn State','Ole Miss','Michigan','Tennessee','Notre Dame','Alabama','LSU','USC','Missouri','Clemson','Oklahoma','Boise State','Utah','Kansas State','Louisville','Washington','Iowa','Florida State','NC State','Arizona','SMU'],
-    ['Oregon','Ohio State','Georgia','Penn State','Ole Miss','Texas','Michigan','Tennessee','Notre Dame','Boise State','Alabama','LSU','USC','Clemson','Missouri','Indiana','Oklahoma','Kansas State','Utah','Louisville','Washington','Iowa','Florida State','NC State','SMU'],
-  ];
+  const cur0 = await getCurrentWeekInfo(season);
+  const endWeek0 = Math.max(1, cur0.week);
+  const realWeeks = [1, 2, 3].map(back => Math.max(1, Math.min(weeklyReal.maxWeek || 1, endWeek0 - (3 - back))))
+    .filter((w, i, arr) => arr.indexOf(w) === i); // dedupe if season is early
+  const BASE = realWeeks.map(wk => (weeklyReal.weeks[wk] || weeklyReal.weeks[weeklyReal.maxWeek] || [])
+    .slice(0, 25).map(t => t.name));
+  if (!BASE.length || !BASE[0].length) return res.status(400).json({ error: 'No computed rankings available yet for this season' });
+  // Pad to 3 "weeks" of base data if the season is too early for 3 distinct weeks.
+  while (BASE.length < 3) BASE.unshift(BASE[0]);
 
   // Seeded random for deterministic-per-voter results
-  function seededRng(seed) {
-    let s = seed;
-    return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
-  }
+  const seededRng = seededRngLocal;
 
   // Generate a ballot by applying random adjacent swaps to the base, more swaps in the back half
   function generateBallot(base, voterIndex, weekIndex) {
@@ -878,6 +909,12 @@ app.post('/api/ballots/seed-mock', requireAdmin, async (req, res) => {
   });
   await Week.bulkWrite(weekOps);
 
+  // ~35% of mock voters vote as "Computer" ballots (no linked custom poll —
+  // same as a manual Computer submission) so the site shows a realistic mix
+  // of human and computer ballots, not all-human.
+  const typeRng = seededRng(999);
+  const voterType = Array.from({ length: count }, () => (typeRng() < 0.35 ? 'computer' : 'human'));
+
   // Create ballots — earliest seeded week uses BASE[0] so week-over-week movement reads correctly.
   const ballotOps = [];
   seedWeeks.forEach((wk, idx) => {
@@ -892,6 +929,7 @@ app.post('/api/ballots/seed-mock', requireAdmin, async (req, res) => {
             userName: mockName(i),
             rankings: generateBallot(base, i, idx),
             week: wk, season,
+            ballotType: voterType[i],
             submittedAt: new Date(Date.now() - weeksAgo * 7 * 86400000 + Math.random() * 86400000 * 2),
           },
           upsert: true,
@@ -900,7 +938,11 @@ app.post('/api/ballots/seed-mock', requireAdmin, async (req, res) => {
     }
   });
   await Ballot.bulkWrite(ballotOps);
-  res.json({ ok: true, added: seedWeeks.length * count, weeks: seedWeeks.length, voters: count, seededWeeks: seedWeeks });
+  const computerCount = voterType.filter(t => t === 'computer').length;
+  res.json({
+    ok: true, added: seedWeeks.length * count, weeks: seedWeeks.length, voters: count, seededWeeks: seedWeeks,
+    humanVoters: count - computerCount, computerVoters: computerCount,
+  });
 });
 
 // POST /api/ballots/clear-mock
@@ -1491,6 +1533,264 @@ app.delete('/api/custom-polls/:id', requireAuth, async (req, res) => {
   if (poll.userId !== req.user.id) return res.status(403).json({ error: 'Not your poll' });
   await CustomPoll.deleteOne({ _id: req.params.id });
   res.json({ ok: true });
+});
+
+// ---- Global search — teams + voters ----
+app.get('/api/search', async (req, res) => {
+  const q = (req.query.q || '').toString().trim().toLowerCase();
+  if (q.length < 2) return res.json({ teams: [], voters: [] });
+  const season = Number(req.query.season || 2025);
+
+  const teamsRaw = await readJson(season, 'teams') || [];
+  const teams = teamsRaw
+    .filter(t => (t.classification || '').toLowerCase() === 'fbs')
+    .map(t => ({ name: (t.school || t.team || t.name || '').trim(), conference: t.conference || t.conf || 'Unknown' }))
+    .filter(t => t.name && t.name.toLowerCase().includes(q))
+    .slice(0, 8);
+
+  const ballots = await Ballot.find({ season, userId: { $not: /^mock_/ } }).select('userId userName').lean();
+  const seen = new Set();
+  const voters = [];
+  for (const b of ballots) {
+    if (seen.has(b.userId) || !b.userName?.toLowerCase().includes(q)) continue;
+    seen.add(b.userId);
+    voters.push({ userId: b.userId, userName: b.userName });
+    if (voters.length >= 8) break;
+  }
+  res.json({ teams, voters });
+});
+
+// ---- Team-page discussion threads ----
+app.get('/api/comments', async (req, res) => {
+  const team = (req.query.team || '').toString();
+  if (!team) return res.status(400).json({ error: 'Missing team' });
+  const comments = await Comment.find({ team }).sort({ createdAt: -1 }).limit(200).lean();
+  res.json({ comments });
+});
+
+app.post('/api/comments', requireAuth, async (req, res) => {
+  const team = (req.body.team || '').toString();
+  const text = (req.body.text || '').toString().trim().slice(0, 500);
+  if (!team || !text) return res.status(400).json({ error: 'Missing team or text' });
+  const account = await User.findById(req.user.id).lean();
+  if (account?.banned) return res.status(403).json({ error: 'Your posting privileges have been suspended' });
+  const comment = await Comment.create({ team, userId: req.user.id, userName: req.user.name || 'Anonymous', text });
+  res.json({ ok: true, comment });
+});
+
+app.delete('/api/comments/:id', requireAuth, async (req, res) => {
+  const comment = await Comment.findById(req.params.id).lean();
+  if (!comment) return res.status(404).json({ error: 'Comment not found' });
+  if (comment.userId !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Not your comment' });
+  await Comment.deleteOne({ _id: req.params.id });
+  res.json({ ok: true });
+});
+
+// ---- Weekly game picks (separate, lighter-weight than the Top 25 ballot) ----
+function gameSlug(week, home, away) {
+  const norm = s => (s || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return `w${week}_${norm(home)}_${norm(away)}`;
+}
+
+async function loadWeekGames(season, week) {
+  const gamesRaw = await readJson(Number(season), 'games-regular') || [];
+  const weekKey = (g) => g.week ?? g.game_week ?? g.gameWeek ?? 1;
+  const out = [];
+  for (const g of gamesRaw) {
+    if (weekKey(g) !== Number(week)) continue;
+    const home = (g.home || g.homeTeam || g.home_team || g.homeSchool || g.home_school || '').toString().trim();
+    const away = (g.away || g.awayTeam || g.away_team || g.awaySchool || g.away_school || '').toString().trim();
+    if (!home || !away) continue;
+    const hp = g.home_points ?? g.homePoints ?? g.points_home ?? g.home_score ?? null;
+    const ap = g.away_points ?? g.awayPoints ?? g.points_away ?? g.away_score ?? null;
+    const played = hp != null && ap != null && !isNaN(+hp) && !isNaN(+ap);
+    out.push({
+      gameId: gameSlug(week, home, away), home, away,
+      played, homeScore: played ? +hp : null, awayScore: played ? +ap : null,
+      winner: played ? (+hp > +ap ? home : (+ap > +hp ? away : null)) : null,
+      startDate: g.start_date || g.startDate || g.date || null,
+    });
+  }
+  return out;
+}
+
+app.get('/api/picks/games', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  try {
+    const info = await getCurrentWeekInfo(season);
+    const week = req.query.week ? Number(req.query.week) : info.week;
+    const games = await loadWeekGames(season, week);
+    res.json({ season, week, currentWeek: info.week, games });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/picks', requireAuth, async (req, res) => {
+  const season = Number(req.body.season || 2025);
+  const week = Number(req.body.week);
+  const picks = Array.isArray(req.body.picks) ? req.body.picks : [];
+  if (!week || !picks.length) return res.status(400).json({ error: 'Missing week or picks' });
+
+  const games = await loadWeekGames(season, week);
+  const byId = new Map(games.map(g => [g.gameId, g]));
+  const ops = [];
+  for (const p of picks) {
+    const g = byId.get(p.gameId);
+    if (!g) continue;
+    if (g.played) continue; // locked once the game has a result
+    if (p.pickedTeam !== g.home && p.pickedTeam !== g.away) continue;
+    ops.push({
+      updateOne: {
+        filter: { userId: req.user.id, season, gameId: p.gameId },
+        update: {
+          userId: req.user.id, userName: req.user.name || 'Anonymous', season, week,
+          gameId: p.gameId, home: g.home, away: g.away, pickedTeam: p.pickedTeam,
+        },
+        upsert: true,
+      },
+    });
+  }
+  if (ops.length) await GamePick.bulkWrite(ops);
+  res.json({ ok: true, saved: ops.length });
+});
+
+app.get('/api/picks/mine', requireAuth, async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const week = Number(req.query.week);
+  const picks = await GamePick.find({ userId: req.user.id, season, ...(week ? { week } : {}) }).lean();
+  res.json({ picks });
+});
+
+// Leaderboard: joins every stored pick against that game's real result.
+app.get('/api/picks/leaderboard', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const picks = await GamePick.find({ season, userId: { $not: /^mock_/ } }).lean();
+  if (!picks.length) return res.json({ leaderboard: [] });
+
+  const weeks = [...new Set(picks.map(p => p.week))];
+  const resultsByGameId = new Map();
+  for (const wk of weeks) {
+    const games = await loadWeekGames(season, wk);
+    for (const g of games) if (g.played) resultsByGameId.set(g.gameId, g.winner);
+  }
+
+  const byUser = new Map();
+  for (const p of picks) {
+    const winner = resultsByGameId.get(p.gameId);
+    if (winner === undefined) continue; // not played yet
+    const stat = byUser.get(p.userId) || { userId: p.userId, userName: p.userName, correct: 0, total: 0 };
+    stat.total++;
+    if (winner && winner === p.pickedTeam) stat.correct++;
+    byUser.set(p.userId, stat);
+  }
+  const leaderboard = [...byUser.values()]
+    .filter(s => s.total > 0)
+    .map(s => ({ ...s, pct: Math.round((s.correct / s.total) * 100) }))
+    .sort((a, b) => b.pct - a.pct || b.total - a.total);
+  res.json({ leaderboard });
+});
+
+// ---- CFP / bowl projection (heuristic, computed live off the real Top 25 + conference data) ----
+app.get('/api/cfp-projection', async (req, res) => {
+  const season = String(req.query.season || 2025);
+  try {
+    if (!weeklyCache.has(season)) weeklyCache.set(season, await computeWeeklyRankings(season));
+    const cache = weeklyCache.get(season);
+    const wk = cache.maxWeek;
+    const top = (cache.weeks[wk] || []).slice(0, 30);
+    if (!top.length) return res.status(400).json({ error: 'No rankings available yet' });
+
+    // "Conference champion" heuristic: best-ranked team from each conference
+    // among the ranked field (a simplification — not the actual CFP committee
+    // process, which factors in title games not modeled here).
+    const byConf = new Map();
+    for (const t of top) {
+      if (!byConf.has(t.conference)) byConf.set(t.conference, t);
+    }
+    const champs = [...byConf.values()].sort((a, b) => a.rank - b.rank);
+    const champNames = new Set(champs.map(c => c.name));
+    const atLarge = top.filter(t => !champNames.has(t.name));
+
+    const seeded = [...champs.slice(0, 5), ...atLarge].slice(0, 12).map((t, i) => ({
+      seed: i + 1, team: t.name, rank: t.rank, conference: t.conference,
+      isChamp: champNames.has(t.name), byeWeek: i < 4,
+    }));
+
+    res.json({ season: Number(season), week: wk, bracket: seeded, note: 'Simplified projection — best-ranked team per conference stands in for a champion; not the official CFP process.' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ---- Public Heisman / player-of-the-year straw poll ----
+function computeOffenseScore(row) {
+  const yards = (row.passingYards || 0) + (row.rushingYards || 0) + (row.receivingYards || 0);
+  const tds = (row.passingTD || 0) + (row.rushingTD || 0) + (row.receivingTD || 0);
+  return yards + 20 * tds - 15 * (row.passingINT || 0);
+}
+
+async function computeHeismanCandidates(season, limit = 15) {
+  const rawRows = await readJson(Number(season), 'stats-player-season') || [];
+  const map = new Map();
+  for (const row of rawRows) {
+    const name = row.player || row.name;
+    const team = row.team || row.school;
+    if (!name || !team) continue;
+    const key = `${name}::${team}`;
+    if (!map.has(key)) map.set(key, { player: name, team, position: row.position || '', passingYards: 0, passingTD: 0, passingINT: 0, rushingYards: 0, rushingTD: 0, receivingYards: 0, receivingTD: 0 });
+    const agg = map.get(key);
+    const category = (row.category || '').toLowerCase().replace(/\s+/g, '');
+    const statType = (row.statType || '').toUpperCase().replace(/\s+/g, '');
+    const value = parseFloat(row.stat);
+    if (Number.isNaN(value)) continue;
+    if (category === 'passing') {
+      if (statType === 'YDS') agg.passingYards += value;
+      if (statType === 'TD' || statType === 'TDS') agg.passingTD += value;
+      if (statType === 'INT') agg.passingINT += value;
+    } else if (category === 'rushing') {
+      if (statType === 'YDS') agg.rushingYards += value;
+      if (statType === 'TD' || statType === 'TDS') agg.rushingTD += value;
+    } else if (category === 'receiving') {
+      if (statType === 'YDS') agg.receivingYards += value;
+      if (statType === 'TD' || statType === 'TDS') agg.receivingTD += value;
+    }
+  }
+  return [...map.values()]
+    .map(p => ({ ...p, score: computeOffenseScore(p) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+app.get('/api/awards/heisman/candidates', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  try {
+    const candidates = await computeHeismanCandidates(season);
+    if (!candidates.length) return res.status(400).json({ error: 'No player stats downloaded for this season yet' });
+    res.json({ season, candidates });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/awards/heisman/vote', requireAuth, async (req, res) => {
+  const season = Number(req.body.season || 2025);
+  const { playerName, team } = req.body;
+  if (!playerName) return res.status(400).json({ error: 'Missing playerName' });
+  const vote = await AwardVote.findOneAndUpdate(
+    { userId: req.user.id, season, category: 'heisman' },
+    { userId: req.user.id, userName: req.user.name || 'Anonymous', season, category: 'heisman', playerName, team: team || '' },
+    { upsert: true, new: true }
+  );
+  res.json({ ok: true, vote });
+});
+
+app.get('/api/awards/heisman/results', async (req, res) => {
+  const season = Number(req.query.season || 2025);
+  const votes = await AwardVote.find({ season, category: 'heisman' }).lean();
+  const tally = new Map();
+  for (const v of votes) {
+    const key = `${v.playerName}::${v.team}`;
+    tally.set(key, (tally.get(key) || 0) + 1);
+  }
+  const results = [...tally.entries()]
+    .map(([key, votes]) => { const [playerName, team] = key.split('::'); return { playerName, team, votes }; })
+    .sort((a, b) => b.votes - a.votes);
+  res.json({ season, totalVotes: votes.length, results });
 });
 
 // Serve static client build for production (Heroku)

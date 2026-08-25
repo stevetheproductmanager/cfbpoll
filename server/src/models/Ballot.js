@@ -8,6 +8,8 @@ const ballotSchema = new mongoose.Schema({
   rankings: [{ type: String }],
   ballotType: { type: String, enum: ['human', 'computer'], default: 'human' },
   customPollId: { type: String, default: null }, // if ballotType==='computer' and derived from a saved custom poll
+  note: { type: String, default: '', maxlength: 500 }, // voter's short reasoning for this week's ballot
+  confidence: { type: Map, of: String, default: undefined }, // team -> 'bold' for picks the voter is calling out
   submittedAt: { type: Date, default: Date.now },
 });
 

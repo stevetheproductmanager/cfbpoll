@@ -19,7 +19,7 @@ export default function MockVoters() {
       const data = await r.json()
       if (!r.ok) { toast.error(data.error || 'Failed to seed'); return }
       if (data.message) toast.info(data.message)
-      else toast.success(`Seeded ${data.voters} mock voters × ${data.weeks} weeks (${data.added} ballots)`)
+      else toast.success(`Seeded ${data.voters} mock voters (${data.humanVoters} human, ${data.computerVoters} computer) × ${data.weeks} weeks (${data.added} ballots) from real season data`)
     } catch { toast.error('Could not reach server') }
     finally { setSeeding(false) }
   }
@@ -37,7 +37,9 @@ export default function MockVoters() {
     <div className="card" style={{ maxWidth: 640 }}>
       <h2 style={{ marginBottom: 8 }}>Mock Voters</h2>
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
-        Generate realistic mock ballots to populate the consensus rankings, leaderboard, and visual poll.
+        Generate realistic mock ballots — built from this season's actual computed rankings (not placeholder data),
+        with real-sounding voter names and a mix of Human/Computer ballot types — to populate the consensus rankings,
+        leaderboard, and visual poll. Always tagged and fully removable with "Clear Mock Data".
       </p>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -55,10 +57,10 @@ export default function MockVoters() {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {[
-          { label: `${mockCount} Mock Voters`, desc: 'Unique personas with varied rankings' },
-          { label: '3 Weeks of Ballots', desc: 'Progressive movement week over week' },
+          { label: `${mockCount} Mock Voters`, desc: 'Real-sounding names, varied rankings' },
+          { label: '3 Weeks of Ballots', desc: "Real week-over-week movement from this season's data" },
           { label: `${mockCount * 3} Total Ballots`, desc: `${mockCount} voters × 3 weeks` },
-          { label: 'Realistic Variance', desc: 'Top teams consistent, lower picks shuffled' },
+          { label: 'Human + Computer Mix', desc: '~35% seeded as Computer-type ballots' },
         ].map(item => (
           <div key={item.label} style={{ background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
             <div style={{ fontWeight: 600, fontSize: 13 }}>{item.label}</div>
