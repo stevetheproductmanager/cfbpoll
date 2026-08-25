@@ -12,6 +12,10 @@ export default function PollManager() {
   const [seeding, setSeeding] = useState(false)
   const [mockCount, setMockCount] = useState(8)
   const [advDeadline, setAdvDeadline] = useState('')
+  const [calendarStart, setCalendarStart] = useState('')
+  const [seedingCalendar, setSeedingCalendar] = useState(false)
+  const [newWeek, setNewWeek] = useState({ week: '', label: '', deadline: '' })
+  const [creatingWeek, setCreatingWeek] = useState(false)
 
   // Schedule state
   const [schedule, setSchedule] = useState(null)
@@ -142,6 +146,52 @@ export default function PollManager() {
     } catch { toast.error('Could not reach server') }
   }
 
+  const updateLabel = async (week, label) => {
+    try {
+      const r = await fetch('/api/weeks/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ week, label }),
+      })
+      if (!r.ok) { toast.error('Failed to update label'); return }
+      fetchWeeks()
+    } catch { toast.error('Could not reach server') }
+  }
+
+  const createWeek = async () => {
+    if (!newWeek.week) { toast.error('Enter a week number'); return }
+    setCreatingWeek(true)
+    try {
+      const r = await fetch('/api/weeks/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ week: Number(newWeek.week), label: newWeek.label || undefined, deadline: newWeek.deadline || undefined }),
+      })
+      const data = await r.json()
+      if (!r.ok) { toast.error(data.error || 'Failed to create week'); return }
+      toast.success(`Week ${newWeek.week} created`)
+      setNewWeek({ week: '', label: '', deadline: '' })
+      fetchWeeks()
+    } catch { toast.error('Could not reach server') }
+    finally { setCreatingWeek(false) }
+  }
+
+  const seedCalendar = async () => {
+    setSeedingCalendar(true)
+    try {
+      const r = await fetch('/api/weeks/seed-calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(calendarStart ? { startDate: calendarStart } : {}),
+      })
+      const data = await r.json()
+      if (!r.ok) { toast.error(data.error || 'Failed to seed calendar'); return }
+      toast.success(`Created ${data.created} week${data.created !== 1 ? 's' : ''}${data.skipped ? ` (${data.skipped} already existed)` : ''}`)
+      fetchWeeks()
+    } catch { toast.error('Could not reach server') }
+    finally { setSeedingCalendar(false) }
+  }
+
   const seedMock = async () => {
     setSeeding(true)
     try {
@@ -207,6 +257,7 @@ export default function PollManager() {
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border-strong)', textAlign: 'left' }}>
                   <th style={{ padding: '8px 6px' }}>Week</th>
+                  <th style={{ padding: '8px 6px' }}>Label</th>
                   <th style={{ padding: '8px 6px' }}>Status</th>
                   <th style={{ padding: '8px 6px' }}>Deadline</th>
                   <th style={{ padding: '8px 6px', textAlign: 'center' }}>Ballots</th>
@@ -217,6 +268,13 @@ export default function PollManager() {
                 {weeks.map(w => (
                   <tr key={w.week} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '10px 6px', fontWeight: 700, color: 'var(--brand2)' }}>Week {w.week}</td>
+                    <td style={{ padding: '10px 6px' }}>
+                      <input type="text" className="input" style={{ width: 150, fontSize: 12, padding: '4px 8px' }}
+                        placeholder="e.g. Bowl Season"
+                        defaultValue={w.label || ''}
+                        onBlur={e => { if (e.target.value !== (w.label || '')) updateLabel(w.week, e.target.value) }}
+                      />
+                    </td>
                     <td style={{ padding: '10px 6px' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: w.open ? 'var(--ok)' : 'var(--err)' }}>
                         <span style={{ width: 8, height: 8, borderRadius: 99, background: w.open ? 'var(--ok)' : 'var(--err)', boxShadow: w.open ? '0 0 6px var(--ok)' : 'none' }} />
@@ -241,18 +299,51 @@ export default function PollManager() {
                   </tr>
                 ))}
                 {weeks.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', color: 'var(--muted)' }}>No weeks yet</td></tr>
+                  <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', color: 'var(--muted)' }}>No weeks yet</td></tr>
                 )}
               </tbody>
             </table>
           </div>
 
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 }}>
             <h3 style={{ marginBottom: 8 }}>Advance to Next Week</h3>
             <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Closes the current week and creates a new one with voting open.</p>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <input type="datetime-local" className="input" style={{ width: 220, fontSize: 13 }} value={advDeadline} onChange={e => setAdvDeadline(e.target.value)} />
               <button className="btn btn-primary" onClick={advanceWeek} style={{ fontSize: 13 }}>Advance Week</button>
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 }}>
+            <h3 style={{ marginBottom: 8 }}>Seed NCAA Season Calendar</h3>
+            <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+              One-click fill of Weeks 1–15, Conference Championships, Bowl Season, and CFP rounds through the National Championship. Skips any week number that already exists.
+            </p>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input type="datetime-local" className="input" style={{ width: 220, fontSize: 13 }}
+                value={calendarStart} onChange={e => setCalendarStart(e.target.value)}
+                title="Week 1 deadline — later weeks are spaced 7 days apart from here" />
+              <button className="btn btn-primary" onClick={seedCalendar} disabled={seedingCalendar} style={{ fontSize: 13 }}>
+                {seedingCalendar ? 'Seeding...' : 'Seed Calendar'}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+            <h3 style={{ marginBottom: 8 }}>Add a Specific Week</h3>
+            <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Manually create any week number out of sequence (e.g. a makeup week or a late bowl slot).</p>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input type="number" className="input" placeholder="Week #" min={0} max={99}
+                value={newWeek.week} onChange={e => setNewWeek(w => ({ ...w, week: e.target.value }))}
+                style={{ width: 80, fontSize: 13 }} />
+              <input type="text" className="input" placeholder="Label (optional)"
+                value={newWeek.label} onChange={e => setNewWeek(w => ({ ...w, label: e.target.value }))}
+                style={{ width: 160, fontSize: 13 }} />
+              <input type="datetime-local" className="input" style={{ width: 220, fontSize: 13 }}
+                value={newWeek.deadline} onChange={e => setNewWeek(w => ({ ...w, deadline: e.target.value }))} />
+              <button className="btn btn-primary" onClick={createWeek} disabled={creatingWeek} style={{ fontSize: 13 }}>
+                {creatingWeek ? 'Adding...' : 'Add Week'}
+              </button>
             </div>
           </div>
         </div>

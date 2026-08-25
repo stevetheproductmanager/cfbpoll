@@ -3,6 +3,7 @@ import { mongoose } from '../db.js';
 const weekSchema = new mongoose.Schema({
   season: { type: Number, required: true },
   week: { type: Number, required: true },
+  label: { type: String }, // e.g. "Week 1", "Conference Championships", "CFP Semifinals"
   deadline: { type: Date },
   isOpen: { type: Boolean, default: true },
 }, { timestamps: true });

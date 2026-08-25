@@ -313,11 +313,18 @@ function nextMonday5pmPST(fromDate) {
   return d;
 }
 
+// Admin's isOpen flag is authoritative; a deadline only auto-closes a week
+// that's still flagged open once it passes (it can never force one back open).
+function computeIsOpen(wk) {
+  if (wk.isOpen === false) return false;
+  if (wk.deadline && new Date() >= new Date(wk.deadline)) return false;
+  return true;
+}
+
 async function getCurrentWeekInfo(season = 2025) {
   const wk = await Week.findOne({ season }).sort({ week: -1 }).lean();
-  if (!wk) return { week: 1, deadline: null, isOpen: true, season };
-  const isOpen = wk.deadline ? new Date() < new Date(wk.deadline) : wk.isOpen !== false;
-  return { week: wk.week, deadline: wk.deadline, isOpen, season };
+  if (!wk) return { week: 1, label: null, deadline: null, isOpen: true, season };
+  return { week: wk.week, label: wk.label || null, deadline: wk.deadline, isOpen: computeIsOpen(wk), season };
 }
 
 async function ensureWeekExists(season = 2025) {
@@ -368,8 +375,9 @@ app.get('/api/weeks', async (req, res) => {
     const count = await Ballot.countDocuments({ season, week: w.week });
     return {
       week: w.week,
+      label: w.label || null,
       deadline: w.deadline,
-      open: w.deadline ? new Date() < new Date(w.deadline) : w.isOpen !== false,
+      open: computeIsOpen(w),
       ballotCount: count,
     };
   }));
@@ -393,13 +401,64 @@ app.post('/api/weeks/advance', requireAdmin, async (req, res) => {
 
 // POST /api/weeks/update
 app.post('/api/weeks/update', requireAdmin, async (req, res) => {
-  const { week, deadline, open, season = 2025 } = req.body;
+  const { week, deadline, open, label, season = 2025 } = req.body;
   const wk = await Week.findOne({ season, week });
   if (!wk) return res.status(404).json({ error: 'Week not found' });
   if (deadline) wk.deadline = new Date(deadline);
-  if (open !== undefined) wk.isOpen = open;
+  if (label !== undefined) wk.label = label;
+  if (open !== undefined) {
+    wk.isOpen = open;
+    // Reopening a week whose deadline already passed needs a fresh deadline,
+    // or computeIsOpen() would just report it closed again immediately.
+    // Only auto-extend if the caller didn't also supply a new deadline.
+    if (open && !deadline && wk.deadline && new Date() >= new Date(wk.deadline)) {
+      wk.deadline = nextMonday5pmPST();
+    }
+  }
   await wk.save();
   res.json({ ok: true, week: wk });
+});
+
+// POST /api/weeks/create — manually add any week (not just the next sequential one)
+app.post('/api/weeks/create', requireAdmin, async (req, res) => {
+  const { week, label, deadline, isOpen = true, season = 2025 } = req.body;
+  if (!week || !Number.isFinite(Number(week))) return res.status(400).json({ error: 'Missing/invalid week number' });
+  const exists = await Week.findOne({ season, week });
+  if (exists) return res.status(409).json({ error: `Week ${week} already exists for ${season}` });
+  const wk = await Week.create({
+    season, week: Number(week), label: label || undefined,
+    deadline: deadline ? new Date(deadline) : nextMonday5pmPST(),
+    isOpen,
+  });
+  res.json({ ok: true, week: wk });
+});
+
+// The standard modern CFB calendar: 15 regular-season weeks + postseason.
+// Only fills in gaps — never touches a week number that already exists.
+const NCAA_CALENDAR = [
+  ...Array.from({ length: 15 }, (_, i) => ({ week: i + 1, label: `Week ${i + 1}` })),
+  { week: 16, label: 'Conference Championships' },
+  { week: 17, label: 'Bowl Season / CFP First Round' },
+  { week: 18, label: 'CFP Quarterfinals' },
+  { week: 19, label: 'CFP Semifinals' },
+  { week: 20, label: 'National Championship' },
+];
+
+// POST /api/weeks/seed-calendar — bulk-create the standard season calendar.
+// startDate anchors Week 1's deadline; each following slot is +7 days.
+app.post('/api/weeks/seed-calendar', requireAdmin, async (req, res) => {
+  const { season = 2025, startDate } = req.body;
+  const anchor = startDate ? new Date(startDate) : nextMonday5pmPST();
+  const existing = new Set((await Week.find({ season }, 'week').lean()).map(w => w.week));
+  const toCreate = NCAA_CALENDAR
+    .filter(w => !existing.has(w.week))
+    .map(w => ({
+      season, week: w.week, label: w.label,
+      deadline: new Date(anchor.getTime() + (w.week - 1) * 7 * 86400000),
+      isOpen: true,
+    }));
+  if (toCreate.length) await Week.insertMany(toCreate);
+  res.json({ ok: true, created: toCreate.length, skipped: NCAA_CALENDAR.length - toCreate.length });
 });
 
 // GET /api/ballots
