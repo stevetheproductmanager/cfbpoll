@@ -4,17 +4,6 @@ import { useAuth } from '../store/AuthContext.jsx'
 import { useRankings } from '../store/RankingsContext.jsx'
 import ThemeToggle from './ThemeToggle.jsx'
 
-function DataIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
-  )
-}
-
 function YearPicker() {
   const { year, setYear } = useRankings()
   return (
@@ -39,26 +28,19 @@ const ADMIN_NAV = [
       { key: 'weekbyweek', label: 'Week by Week' },
       { key: 'sos', label: 'SOS' },
       { key: 'conference', label: 'Conference' },
-    ],
-  },
-  {
-    key: 'explore', label: 'Explore',
-    tabs: [
       { key: 'compare', label: 'Compare' },
       { key: 'h2h', label: 'Head-to-Head' },
-    ],
-  },
-  {
-    key: 'editorial', label: 'Editorial',
-    tabs: [
       { key: 'narrative', label: 'Narrative Top 25' },
       { key: 'awards', label: 'Player Awards' },
     ],
   },
   {
-    key: 'poll', label: 'Poll',
+    key: 'poll', label: 'Poll Management',
     tabs: [
-      { key: 'pollmanager', label: 'Manage Poll' },
+      { key: 'weekmgmt', label: 'Week Management' },
+      { key: 'mockvoters', label: 'Mock Voters' },
+      { key: 'scheduleddownload', label: 'Scheduled Data Download' },
+      { key: 'emailnotifications', label: 'Email Notifications' },
     ],
   },
   {
@@ -67,13 +49,15 @@ const ADMIN_NAV = [
       { key: 'users', label: 'Users' },
       { key: 'ballotmod', label: 'Ballots' },
       { key: 'sitesettings', label: 'Settings' },
+      { key: 'data', label: 'Data' },
     ],
   },
 ]
 
-export default function AdminHeader({ showData, onToggleData, subTab, onTabClick }) {
+export default function AdminHeader({ group, subTab, onTabClick }) {
   const { hasData } = useRankings()
   const { logout } = useAuth()
+  const activeGroup = ADMIN_NAV.find(g => g.key === group) || ADMIN_NAV[0]
 
   return (
     <>
@@ -85,15 +69,6 @@ export default function AdminHeader({ showData, onToggleData, subTab, onTabClick
           </div>
           <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center' }}>
             {hasData && <YearPicker />}
-            <button
-              className={`btn ${showData ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={onToggleData}
-              title="Data Download"
-              style={{ padding: '5px 10px', fontSize: 13 }}
-            >
-              <DataIcon />
-              <span>Data</span>
-            </button>
             <ThemeToggle />
             <Link to="/" className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}>
               ← Public Site
@@ -105,26 +80,33 @@ export default function AdminHeader({ showData, onToggleData, subTab, onTabClick
         </div>
       </div>
 
-      {!showData && (
-        <div className="nav-strip" style={{ display: 'flex' }}>
-          <div className="nav-strip-inner" style={{ display: 'flex', alignItems: 'center' }}>
-            {ADMIN_NAV.map(g => (
-              <div key={g.key} className="nav-group" style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="nav-group-label">{g.label}</span>
-                {g.tabs.map(t => (
-                  <div
-                    key={t.key}
-                    className={`tab${subTab === t.key ? ' active' : ''}`}
-                    onClick={() => onTabClick(g.key, t.key)}
-                  >
-                    {t.label}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
+      <div className="nav-strip" style={{ display: 'flex' }}>
+        <div className="nav-strip-inner" style={{ display: 'flex', alignItems: 'center' }}>
+          {ADMIN_NAV.map(g => (
+            <div
+              key={g.key}
+              className={`tab${group === g.key ? ' active' : ''}`}
+              onClick={() => onTabClick(g.key, g.tabs[0].key)}
+            >
+              {g.label}
+            </div>
+          ))}
         </div>
-      )}
+      </div>
+
+      <div className="nav-strip sub-strip" style={{ display: 'flex' }}>
+        <div className="nav-strip-inner" style={{ display: 'flex', alignItems: 'center' }}>
+          {activeGroup.tabs.map(t => (
+            <div
+              key={t.key}
+              className={`tab sub-tab${subTab === t.key ? ' active' : ''}`}
+              onClick={() => onTabClick(activeGroup.key, t.key)}
+            >
+              {t.label}
+            </div>
+          ))}
+        </div>
+      </div>
     </>
   )
 }

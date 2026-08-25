@@ -25,7 +25,10 @@ import Head2Headv2 from './pages/Head2Headv2.jsx'
 import NarrativeTop25 from './pages/NarrativeTop25.jsx'
 import PlayerAwards from './pages/PlayerAwards.jsx'
 import WeekByWeek from './pages/WeekByWeek.jsx'
-import PollManager from './pages/PollManager.jsx'
+import WeekManagement from './pages/WeekManagement.jsx'
+import MockVoters from './pages/MockVoters.jsx'
+import ScheduledDownload from './pages/ScheduledDownload.jsx'
+import EmailNotifications from './pages/EmailNotifications.jsx'
 import AdminUsers from './pages/AdminUsers.jsx'
 import AdminBallots from './pages/AdminBallots.jsx'
 import AdminSettings from './pages/AdminSettings.jsx'
@@ -48,20 +51,20 @@ function DataGate() {
   )
 }
 
+// These subtabs manage the site itself and don't need CFBD season data loaded.
+const NO_DATA_GATE_TABS = ['weekmgmt', 'mockvoters', 'scheduleddownload', 'emailnotifications', 'users', 'ballotmod', 'sitesettings', 'data']
+
 function AdminContent() {
   const { hasData, loading } = useRankings()
   const [group, setGroup] = useState('rankings')
   const [subTab, setSubTab] = useState('overall')
-  const [showData, setShowData] = useState(false)
 
   const handleTabClick = (groupKey, tabKey) => {
     setGroup(groupKey)
     setSubTab(tabKey)
-    setShowData(false)
   }
 
   const renderPage = () => {
-    if (showData) return <DataDownload />
     switch (subTab) {
       case 'overall': return <Rankings />
       case 'weekbyweek': return <WeekByWeek />
@@ -71,10 +74,14 @@ function AdminContent() {
       case 'h2h': return <Head2Headv2 />
       case 'narrative': return <NarrativeTop25 />
       case 'awards': return <PlayerAwards />
-      case 'pollmanager': return <PollManager />
+      case 'weekmgmt': return <WeekManagement />
+      case 'mockvoters': return <MockVoters />
+      case 'scheduleddownload': return <ScheduledDownload />
+      case 'emailnotifications': return <EmailNotifications />
       case 'users': return <AdminUsers />
       case 'ballotmod': return <AdminBallots />
       case 'sitesettings': return <AdminSettings />
+      case 'data': return <DataDownload />
       default: return <Rankings />
     }
   }
@@ -82,14 +89,13 @@ function AdminContent() {
   return (
     <>
       <AdminHeader
-        showData={showData}
-        onToggleData={() => setShowData(s => !s)}
+        group={group}
         subTab={subTab}
         onTabClick={handleTabClick}
       />
 
       <div className="container">
-        {['pollmanager', 'users', 'ballotmod', 'sitesettings'].includes(subTab) ? renderPage() : !hasData && !loading ? <DataGate /> : hasData ? renderPage() : null}
+        {NO_DATA_GATE_TABS.includes(subTab) ? renderPage() : !hasData && !loading ? <DataGate /> : hasData ? renderPage() : null}
       </div>
     </>
   )

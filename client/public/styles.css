@@ -159,6 +159,11 @@ body {
   border-radius: 6px;
 }
 
+/* Second sticky row: sub-tabs beneath the primary group tabs */
+.nav-strip.sub-strip {
+  top: 100px;
+}
+
 /* ---- Cards ---- */
 .card {
   background: var(--panel);
@@ -434,6 +439,7 @@ table tbody tr:hover {
   .container { padding: 0 12px 24px; }
   .topbar { padding: 0 12px; }
   .nav-strip { padding: 0 12px; }
+  .nav-strip.sub-strip { top: 92px; }
   .topbar-inner { height: 48px; }
   .brand { font-size: 15px; }
   .drawer-kpis { grid-template-columns: repeat(2, 1fr); }
