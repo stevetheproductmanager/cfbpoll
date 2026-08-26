@@ -446,6 +446,14 @@ table tbody tr:hover {
   .nav-group-label { display: none; }
   .ballot-grid { grid-template-columns: 1fr !important; }
 
+  /* 16px stops iOS Safari auto-zooming the page when a text input gets focus. */
+  .input { font-size: 16px; }
+
+  /* Bigger tap targets on filter tabs / action buttons — 8px/7px vertical
+     padding is fine with a mouse but tight for a finger. */
+  .btn { padding: 11px 16px; }
+  .tab { padding: 10px 14px; }
+
   /* Narrative Top 25 cards: 4-across is unreadable on a phone — step down to 2. */
   .narrative-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 

@@ -57,7 +57,7 @@ export default function TeamDetailModal({ name, resume, week, onClose, onTeam })
             </div>
           </div>
           <Link to={`/team/${encodeURIComponent(name)}`} style={{ fontSize: 11, fontWeight: 600, color: 'var(--brand2)', whiteSpace: 'nowrap' }} title="Open full team page">Full page →</Link>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>✕</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: 10, margin: -10, lineHeight: 1 }}>✕</button>
         </div>
 
         <div style={{ padding: 20, overflowY: 'auto' }}>

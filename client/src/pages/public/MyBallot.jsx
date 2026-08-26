@@ -143,7 +143,7 @@ function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDraggi
           onClick={e => { e.stopPropagation(); onToggleBold() }}
           title={bold ? 'Marked as a bold pick — click to unmark' : 'Mark as a bold/confident pick'}
           style={{
-            background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontSize: 15, flexShrink: 0,
+            background: 'none', border: 'none', cursor: 'pointer', padding: 8, margin: -8, fontSize: 15, flexShrink: 0, lineHeight: 1,
             opacity: bold ? 1 : 0.3, filter: bold ? 'none' : 'grayscale(1)',
           }}
         >🔥</button>
@@ -151,7 +151,7 @@ function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDraggi
       {onRemove && !locked && (
         <button
           onClick={e => { e.stopPropagation(); onRemove() }}
-          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: '0 2px', fontSize: 14, flexShrink: 0 }}
+          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 8, margin: -8, fontSize: 14, flexShrink: 0, lineHeight: 1 }}
           title="Remove"
         >✕</button>
       )}
