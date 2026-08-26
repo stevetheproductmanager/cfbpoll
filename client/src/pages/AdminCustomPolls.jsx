@@ -229,24 +229,26 @@ function RateLimitsPanel() {
       {stats.limiters.length === 0 ? (
         <p className="small">No rate limits have been hit since the server started — nothing is currently being throttled.</p>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid var(--border-strong)', textAlign: 'left' }}>
-              <th style={{ padding: '6px' }}>Limiter</th>
-              <th style={{ padding: '6px' }}>429s</th>
-              <th style={{ padding: '6px' }}>Last hit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats.limiters.map(l => (
-              <tr key={l.name} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '6px', fontWeight: 600 }}>{l.name}</td>
-                <td style={{ padding: '6px' }}>{l.count}</td>
-                <td style={{ padding: '6px', color: 'var(--muted)' }}>{new Date(l.lastAt).toLocaleString()}</td>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border-strong)', textAlign: 'left' }}>
+                <th style={{ padding: '6px' }}>Limiter</th>
+                <th style={{ padding: '6px' }}>429s</th>
+                <th style={{ padding: '6px' }}>Last hit</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {stats.limiters.map(l => (
+                <tr key={l.name} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '6px', fontWeight: 600 }}>{l.name}</td>
+                  <td style={{ padding: '6px' }}>{l.count}</td>
+                  <td style={{ padding: '6px', color: 'var(--muted)' }}>{new Date(l.lastAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   )
