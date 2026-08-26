@@ -936,6 +936,7 @@ export default function NarrativeCardsTop25() {
       {!busy && !err && topRows.length > 0 && (
         <>
           <div
+            className="narrative-grid"
             style={{
               marginTop: 14,
               display: 'grid',

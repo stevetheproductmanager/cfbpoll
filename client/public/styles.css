@@ -446,6 +446,13 @@ table tbody tr:hover {
   .nav-group-label { display: none; }
   .ballot-grid { grid-template-columns: 1fr !important; }
 
+  /* Narrative Top 25 cards: 4-across is unreadable on a phone — step down to 2. */
+  .narrative-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+
+  /* Team comparison: keep the label column but narrow it and tighten text so
+     the two value columns don't get crushed on narrow screens. */
+  .compare-trait-grid { grid-template-columns: 1fr 76px 1fr !important; gap: 4px !important; font-size: 12px; }
+
   /* Public header collapses to a hamburger menu */
   .pp-desktop-nav, .pp-desktop-actions { display: none !important; }
   .pp-mobile-toggle {
@@ -493,4 +500,9 @@ table tbody tr:hover {
     padding-top: 12px;
     border-top: 1px solid var(--border);
   }
+}
+
+@media (max-width: 480px) {
+  /* Even 2-across is tight once phones get this narrow — go single column. */
+  .narrative-grid { grid-template-columns: 1fr !important; }
 }

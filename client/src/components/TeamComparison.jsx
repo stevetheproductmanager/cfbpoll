@@ -156,7 +156,7 @@ export default function TeamComparison({
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {/* Header cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'stretch' }}>
+      <div className="compare-header-grid" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'stretch' }}>
         <TeamCard team={A} align="right" />
         <div style={{ display: 'grid', placeItems: 'center', padding: 8, color: 'var(--muted)' }}>
           <span style={{ fontWeight: 600, letterSpacing: 0.5 }}>vs</span>
@@ -171,7 +171,7 @@ export default function TeamComparison({
         padding: 12,
         boxShadow: '0 6px 18px rgba(0,0,0,.25)'
       }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 1fr', gap: 8, fontSize: 14, color: 'var(--muted)', padding: '4px 8px' }}>
+        <div className="compare-trait-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 160px 1fr', gap: 8, fontSize: 14, color: 'var(--muted)', padding: '4px 8px' }}>
           <div style={{ textAlign: 'right' }}>{A.school}</div>
           <div style={{ textAlign: 'center', color: 'var(--text)' }}>Trait</div>
           <div style={{ textAlign: 'left' }}>{B.school}</div>
@@ -221,7 +221,7 @@ function Row({ label, a, b }) {
   const pRight = 100 - pLeft;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 1fr', gap: 8, alignItems: 'center', padding: '10px 8px', borderRadius: 12 }}>
+    <div className="compare-trait-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 160px 1fr', gap: 8, alignItems: 'center', padding: '10px 8px', borderRadius: 12 }}>
       <div style={{ position: 'relative', padding: '6px 10px', borderRadius: 10, background: 'rgba(255,255,255,.03)' }}>
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: bothNumeric ? `${pLeft}%` : '0%', background: 'linear-gradient(90deg, var(--brand) 0%, var(--brand2) 100%)', opacity: .18, transition: 'width .45s ease' }} />
         <div style={{ position: 'relative', textAlign: 'right', fontWeight: 600, color: 'var(--text)' }}>{a}</div>
