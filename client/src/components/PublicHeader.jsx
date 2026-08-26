@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../store/AuthContext.jsx'
 import ThemeToggle from './ThemeToggle.jsx'
 import GlobalSearch from './GlobalSearch.jsx'
+import { Goal } from 'lucide-react'
 
 // Grouped into a handful of top-level choices instead of one long flat list —
 // first-time visitors see ~5 things to decide between, not 9+.
@@ -145,7 +146,7 @@ export default function PublicHeader() {
     <div className="topbar" style={{ display: 'flex', position: 'sticky' }}>
       <div className="topbar-inner" style={{ display: 'flex', alignItems: 'center', flexWrap: 'nowrap' }}>
         <Link to="/" className="brand" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center' }}>
-          <span style={{ fontSize: 22 }}>🏈</span>
+          <Goal size={22} style={{ display: 'block' }} />
           <span>Poll <span className="brand-accent">Position</span></span>
         </Link>
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useToast } from '../store/ToastContext.jsx'
 import { useAuth } from '../store/AuthContext.jsx'
+import { PartyPopper } from 'lucide-react'
 
 export default function WeekManagement() {
   const toast = useToast()
@@ -211,7 +212,7 @@ export default function WeekManagement() {
             {incomplete.submitted}/{incomplete.total} registered voters have submitted a ballot this week.
           </p>
           {incomplete.missing.length === 0 ? (
-            <p style={{ fontSize: 13, color: 'var(--ok)' }}>Everyone's voted. 🎉</p>
+            <p style={{ fontSize: 13, color: 'var(--ok)', display: 'flex', alignItems: 'center', gap: 6 }}>Everyone's voted. <PartyPopper size={14} /></p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
               {incomplete.missing.map(v => (

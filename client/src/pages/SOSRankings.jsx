@@ -4,6 +4,7 @@ import { confColor } from '../lib/conferenceUtils.js'
 import ConfBadge from '../components/ConfBadge.jsx'
 import { useTheme } from '../theme/ThemeProvider.jsx'
 import TeamLogo from '../components/TeamLogo.jsx'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 const fmt = (n, d = 3) => (typeof n === 'number' ? n : 0).toFixed(d)
 const fmt0 = (n) => (typeof n === 'number' ? Math.round(n) : 0)
@@ -107,7 +108,7 @@ function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
       <div className="drawer-backdrop" onClick={onClose} />
       <aside className="drawer">
         <div className="drawer-header">
-          <button className="nav-btn" onClick={onPrev} title="Previous (←)">←</button>
+          <button className="nav-btn" onClick={onPrev} title="Previous (←)"><ChevronLeft size={18} /></button>
           <div className="drawer-title">
             <div className="drawer-rank">#{rank}</div>
             <div className="drawer-name">{name}</div>
@@ -115,7 +116,7 @@ function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
               {conference}
             </span>
           </div>
-          <button className="nav-btn" onClick={onNext} title="Next (→)">→</button>
+          <button className="nav-btn" onClick={onNext} title="Next (→)"><ChevronRight size={18} /></button>
         </div>
 
         <div className="drawer-body">

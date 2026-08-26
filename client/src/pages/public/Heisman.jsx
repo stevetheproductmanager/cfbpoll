@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
 import { useToast } from '../../store/ToastContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
+import { Award, Check } from 'lucide-react'
 
 export default function Heisman() {
   const { user, authHeaders } = useAuth()
@@ -40,7 +41,7 @@ export default function Heisman() {
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px 24px 80px' }}>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>🏈 Heisman Straw Poll</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Award size={26} /> Heisman Straw Poll</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Candidates ranked by real season stats — cast your (non-official) vote for the nation's best player.</p>
       </div>
 
@@ -68,8 +69,8 @@ export default function Heisman() {
                 <button
                   className={myVote === c.player ? 'btn btn-primary' : 'btn btn-ghost'}
                   onClick={() => vote(c.player, c.team)} disabled={voting}
-                  style={{ fontSize: 11, padding: '5px 10px' }}
-                >{myVote === c.player ? '✓ Voted' : 'Vote'}</button>
+                  style={{ fontSize: 11, padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >{myVote === c.player ? <><Check size={11} /> Voted</> : 'Vote'}</button>
               </div>
             ))}
           </div>

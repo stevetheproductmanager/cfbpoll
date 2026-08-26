@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useToast } from '../store/ToastContext.jsx'
 import { useAuth } from '../store/AuthContext.jsx'
+import { AlertTriangle, Monitor, User } from 'lucide-react'
 
 export default function AdminBallots() {
   const toast = useToast()
@@ -94,8 +95,8 @@ export default function AdminBallots() {
         <button className="btn btn-ghost" onClick={exportCsv} style={{ fontSize: 12, marginLeft: 'auto' }}>Export CSV</button>
       </div>
       {outlierIds.size > 0 && (
-        <p style={{ fontSize: 12, color: 'var(--warn)', marginTop: -8, marginBottom: 12 }}>
-          ⚠ {outlierIds.size} ballot{outlierIds.size !== 1 ? 's' : ''} flagged — one or more teams ranked far from the field's consensus.
+        <p style={{ fontSize: 12, color: 'var(--warn)', marginTop: -8, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+          <AlertTriangle size={13} /> {outlierIds.size} ballot{outlierIds.size !== 1 ? 's' : ''} flagged — one or more teams ranked far from the field's consensus.
         </p>
       )}
 
@@ -116,9 +117,11 @@ export default function AdminBallots() {
                 <React.Fragment key={b._id}>
                   <tr style={{ borderBottom: expanded === b._id ? 'none' : '1px solid var(--border)', background: outlierIds.has(b._id) ? 'var(--warn-muted, rgba(250,204,21,0.08))' : 'transparent' }}>
                     <td style={{ padding: '10px 6px', fontWeight: 600 }}>
-                      {outlierIds.has(b._id) && <span title="Flagged as an outlier vs. consensus" style={{ marginRight: 6 }}>⚠</span>}
+                      {outlierIds.has(b._id) && <AlertTriangle size={12} title="Flagged as an outlier vs. consensus" style={{ marginRight: 6, verticalAlign: -1 }} />}
                       {b.userName}{String(b.userId).startsWith('mock_') && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--muted)' }}>(mock)</span>}
-                      <span title={b.ballotType === 'computer' ? 'Computer ballot' : 'Human ballot'} style={{ marginLeft: 6, fontSize: 11 }}>{b.ballotType === 'computer' ? '🖥️' : '🧑'}</span>
+                      <span title={b.ballotType === 'computer' ? 'Computer ballot' : 'Human ballot'} style={{ marginLeft: 6, verticalAlign: -2, display: 'inline-block' }}>
+                        {b.ballotType === 'computer' ? <Monitor size={12} /> : <User size={12} />}
+                      </span>
                     </td>
                     <td style={{ padding: '10px 6px' }}>Week {b.week}</td>
                     <td style={{ padding: '10px 6px', fontSize: 12, color: 'var(--text-secondary)' }}>{new Date(b.submittedAt).toLocaleString()}</td>

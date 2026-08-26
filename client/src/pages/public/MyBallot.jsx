@@ -6,6 +6,7 @@ import { Navigate, Link } from 'react-router-dom'
 import TeamDetailModal from '../../components/TeamDetailModal.jsx'
 import FavoriteStar from '../../components/FavoriteStar.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
+import { AlertTriangle, Flame, X, Hand, Check, Vote, User, Monitor } from 'lucide-react'
 
 const BALLOT_KEY = 'pollposition_ballot'
 const BALLOT_TYPE_KEY = 'pollposition_ballot_type'
@@ -76,7 +77,7 @@ function ResumeLine({ resume, conflict }) {
       <span style={{ fontWeight: 700, color: 'var(--text-secondary)' }}>{resume.record}</span>
       {resume.bestWin && <span>Best win: {resume.bestWin.opp} (#{resume.bestWin.oppRank})</span>}
       {resume.sosRank && <span>SOS #{resume.sosRank}</span>}
-      {conflict && <span style={{ color: 'var(--warn)', fontWeight: 700 }}>⚠ lost H2H</span>}
+      {conflict && <span style={{ color: 'var(--warn)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}><AlertTriangle size={11} /> lost H2H</span>}
     </div>
   )
 }
@@ -146,14 +147,14 @@ function TeamChip({ name, rank, onRemove, onTeam, resume, onHandleDown, isDraggi
             background: 'none', border: 'none', cursor: 'pointer', padding: 8, margin: -8, fontSize: 15, flexShrink: 0, lineHeight: 1,
             opacity: bold ? 1 : 0.3, filter: bold ? 'none' : 'grayscale(1)',
           }}
-        >🔥</button>
+        ><Flame size={15} /></button>
       )}
       {onRemove && !locked && (
         <button
           onClick={e => { e.stopPropagation(); onRemove() }}
-          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 8, margin: -8, fontSize: 14, flexShrink: 0, lineHeight: 1 }}
+          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 8, margin: -8, fontSize: 14, flexShrink: 0, lineHeight: 1, display: 'inline-flex' }}
           title="Remove"
-        >✕</button>
+        ><X size={14} /></button>
       )}
     </div>
   )
@@ -206,7 +207,7 @@ function SanityCheck({ conflicts, onTeam }) {
   return (
     <div className="card" style={{ marginTop: 0, marginBottom: 16, border: '1px solid var(--warn)', background: 'rgba(251, 191, 36, 0.06)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 18 }}>⚠️</span>
+        <AlertTriangle size={18} style={{ color: 'var(--warn)' }} />
         <h3 style={{ color: 'var(--warn)', margin: 0 }}>Ballot Sanity Check — {conflicts.length} head-to-head conflict{conflicts.length !== 1 ? 's' : ''}</h3>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -234,7 +235,7 @@ function OnboardingTip() {
       display: 'flex', alignItems: 'center', gap: 12, background: 'var(--brand-glow)',
       border: '1px solid var(--border-accent)', borderRadius: 10, padding: '10px 16px', marginBottom: 16,
     }}>
-      <span style={{ fontSize: 20, flexShrink: 0 }}>👋</span>
+      <Hand size={20} style={{ flexShrink: 0 }} />
       <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', flex: 1 }}>
         <strong>New here?</strong> Use <em>Smart Start</em> to load a preset ranking, then drag the ⠿ handle to reorder — or click a team's name for its full resume.
       </p>
@@ -512,11 +513,11 @@ export default function MyBallot() {
       {!locked && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
           <div style={{ display: 'inline-flex', background: 'var(--panel-2)', border: '1px solid var(--border-strong)', borderRadius: 10, padding: 3, gap: 2 }}>
-            {[{ key: 'human', label: '🧑 Human Ballot' }, { key: 'computer', label: '🖥️ Computer Ballot' }].map(o => (
+            {[{ key: 'human', label: 'Human Ballot', icon: User }, { key: 'computer', label: 'Computer Ballot', icon: Monitor }].map(o => (
               <button key={o.key} onClick={() => setBallotType(o.key)}
                 className={o.key === ballotType ? 'btn btn-primary' : 'btn btn-ghost'}
-                style={{ fontSize: 12, padding: '6px 14px', border: 'none' }}>
-                {o.label}
+                style={{ fontSize: 12, padding: '6px 14px', border: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <o.icon size={12} /> {o.label}
               </button>
             ))}
           </div>
@@ -524,7 +525,9 @@ export default function MyBallot() {
       )}
       {locked && (
         <div style={{ textAlign: 'center', marginBottom: 8 }}>
-          <span className="badge" style={{ fontSize: 11 }}>{ballotType === 'computer' ? '🖥️ Computer Ballot' : '🧑 Human Ballot'}</span>
+          <span className="badge" style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            {ballotType === 'computer' ? <><Monitor size={11} /> Computer Ballot</> : <><User size={11} /> Human Ballot</>}
+          </span>
         </div>
       )}
       {ballotType === 'computer' && !locked && (
@@ -606,23 +609,23 @@ export default function MyBallot() {
               className="btn btn-primary"
               onClick={() => setConfirmAction('submit')}
               disabled={!ballot.length || locked}
-              style={{ fontSize: 13 }}
+              style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 5 }}
             >
-              {isClosed ? 'Voting Closed' : submitted ? '✓ Submitted' : 'Submit Ballot'}
+              {isClosed ? 'Voting Closed' : submitted ? <><Check size={13} /> Submitted</> : 'Submit Ballot'}
             </button>
           </div>
 
           {!ballot.length && (
             <div style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--muted)' }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>🗳️</div>
-              <div style={{ fontSize: 14, fontWeight: 500 }}>Use Smart Start above, or add teams →</div>
+              <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'center' }}><Vote size={32} /></div>
+              <div style={{ fontSize: 14, fontWeight: 500 }}>Use Smart Start above, or add teams</div>
               <div style={{ fontSize: 12, marginTop: 4 }}>Pick up to 25 teams and drag to reorder</div>
             </div>
           )}
 
           {ballot.length > 0 && (
-            <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: -6, marginBottom: 10 }}>
-              Click 🔥 on a team to mark it a bold/confident pick.
+            <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: -6, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+              Click <Flame size={11} /> on a team to mark it a bold/confident pick.
             </p>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}>

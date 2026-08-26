@@ -6,6 +6,7 @@ import TeamDetailModal from '../../components/TeamDetailModal.jsx'
 import FavoriteStar from '../../components/FavoriteStar.jsx'
 import { CURRENT_SEASON } from '../../lib/season.js'
 import ShareButton from '../../components/ShareButton.jsx'
+import { TrendingUp, Check, Vote, BarChart3, User, Monitor } from 'lucide-react'
 
 const BALLOT_KEY = 'pollposition_ballot'
 
@@ -230,7 +231,7 @@ function MoversTab({ top25, data, onTeam }) {
   if (!data?.hasPreviousWeek) {
     return (
       <div className="card" style={{ marginTop: 0, textAlign: 'center', padding: '40px 24px' }}>
-        <div style={{ fontSize: 36, marginBottom: 12 }}>📈</div>
+        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}><TrendingUp size={32} /></div>
         <h3>No Previous Week</h3>
         <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Movement tracking starts from Week 2.</p>
       </div>
@@ -428,7 +429,7 @@ function VoterBallotsTab({ data, selectedWeek, onTeam }) {
                     background: isSelected ? 'var(--brand)' : 'transparent',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
-                    {isSelected && <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>✓</span>}
+                    {isSelected && <Check size={12} style={{ color: '#fff' }} />}
                   </div>
                 )}
                 {!compareMode && <span style={{ color: 'var(--muted)', fontSize: 16 }}>{isExpanded ? '▾' : '▸'}</span>}
@@ -510,7 +511,7 @@ function YourPicksTab({ data, myBallot, onTeam }) {
   if (!myBallot?.length) {
     return (
       <div className="card" style={{ marginTop: 0, textAlign: 'center', padding: '40px 24px' }}>
-        <div style={{ fontSize: 36, marginBottom: 12 }}>🗳️</div>
+        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}><Vote size={32} /></div>
         <h3 style={{ marginBottom: 8 }}>No Ballot Submitted</h3>
         <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 16 }}>Submit a ballot to see how your picks compare.</p>
         <Link to="/ballot" className="btn btn-primary" style={{ borderRadius: 10, textDecoration: 'none' }}>Create Your Ballot</Link>
@@ -671,7 +672,7 @@ export default function PublicRankings() {
           }}>Community Rankings</h1>
         </div>
         <div className="card" style={{ marginTop: 0, textAlign: 'center', padding: '60px 24px' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}><BarChart3 size={48} /></div>
           <h2 style={{ marginBottom: 8 }}>No Ballots Yet</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 400, margin: '0 auto 24px' }}>
             Be the first to submit your Top 25 ballot!
@@ -722,11 +723,11 @@ export default function PublicRankings() {
       {/* Human vs Computer ballot filter + conference filter */}
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
         <div style={{ display: 'inline-flex', background: 'var(--panel-2)', border: '1px solid var(--border-strong)', borderRadius: 10, padding: 3, gap: 2 }}>
-          {[{ key: 'all', label: 'All Ballots' }, { key: 'human', label: '🧑 Human' }, { key: 'computer', label: '🖥️ Computer' }].map(o => (
+          {[{ key: 'all', label: 'All Ballots', icon: null }, { key: 'human', label: 'Human', icon: User }, { key: 'computer', label: 'Computer', icon: Monitor }].map(o => (
             <button key={o.key} onClick={() => setBallotFilter(o.key)}
               className={o.key === ballotFilter ? 'btn btn-primary' : 'btn btn-ghost'}
-              style={{ fontSize: 11, padding: '5px 12px', border: 'none' }}>
-              {o.label}
+              style={{ fontSize: 11, padding: '5px 12px', border: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              {o.icon && <o.icon size={11} />} {o.label}
             </button>
           ))}
         </div>

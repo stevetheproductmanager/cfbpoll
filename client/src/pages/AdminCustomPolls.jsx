@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useToast } from '../store/ToastContext.jsx'
 import { useAuth } from '../store/AuthContext.jsx'
+import { Flag, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 const SUB_TABS = [
   { key: 'polls', label: 'Polls' },
@@ -191,7 +192,7 @@ function UsagePanel() {
                 return (
                   <tr key={p.pollId} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '6px', fontWeight: 600 }}>
-                      {p.name} {suspicious && <span title="100% accuracy over a meaningful sample — worth a manual look" style={{ marginLeft: 4 }}>🚩</span>}
+                      {p.name} {suspicious && <Flag size={12} title="100% accuracy over a meaningful sample — worth a manual look" style={{ marginLeft: 4, verticalAlign: -1, color: 'var(--warn)' }} />}
                     </td>
                     <td style={{ padding: '6px' }}>{p.userName}</td>
                     <td style={{ padding: '6px' }}>{p.accuracyPct}%</td>
@@ -286,7 +287,7 @@ function CoveragePanel() {
       </p>
       {orphanedTotal > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--warn-muted, rgba(250,204,21,0.1))', border: '1px solid var(--warn)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12 }}>⚠️ {orphanedTotal} row(s) saved under endpoints that no longer exist (e.g. removed/renamed CFBD endpoints) — safe to delete.</span>
+          <span style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={13} /> {orphanedTotal} row(s) saved under endpoints that no longer exist (e.g. removed/renamed CFBD endpoints) — safe to delete.</span>
           <button className="btn btn-ghost" onClick={prune} disabled={pruning} style={{ fontSize: 11, padding: '4px 10px' }}>
             {pruning ? 'Deleting…' : 'Delete orphaned rows'}
           </button>
@@ -307,7 +308,9 @@ function CoveragePanel() {
               {data.seasons.map(s => (
                 <tr key={s.season} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '6px', fontWeight: 700 }}>{s.season}</td>
-                  <td style={{ padding: '6px' }}>{s.coreComplete ? '✅' : '⚠️ missing core data'}</td>
+                  <td style={{ padding: '6px' }}>{s.coreComplete
+                    ? <CheckCircle2 size={14} style={{ color: 'var(--ok)', verticalAlign: -2 }} />
+                    : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--warn)' }}><AlertTriangle size={13} /> missing core data</span>}</td>
                   <td style={{ padding: '6px', color: 'var(--muted)' }}>{s.totalDownloaded}/{s.totalEndpoints}</td>
                   <td style={{ padding: '6px', color: 'var(--muted)' }}>{s.orphanedSlugs?.length ? s.orphanedSlugs.join(', ') : '—'}</td>
                 </tr>

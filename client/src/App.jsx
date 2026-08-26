@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom'
 import { AuthProvider, useAuth } from './store/AuthContext.jsx'
 import { RankingsProvider, useRankings } from './store/RankingsContext.jsx'
 import { ToastProvider } from './store/ToastContext.jsx'
+import { Goal } from 'lucide-react'
 
 // Public pages
 import PublicLayout from './pages/public/PublicLayout.jsx'
@@ -59,7 +60,7 @@ function DataGate() {
   if (loading || hasData) return null
   return (
     <div className="welcome-gate">
-      <div style={{ fontSize: 56, marginBottom: 16, filter: 'drop-shadow(0 4px 12px rgba(77, 142, 255, 0.3))' }}>🏈</div>
+      <div style={{ marginBottom: 16, filter: 'drop-shadow(0 4px 12px rgba(77, 142, 255, 0.3))' }}><Goal size={56} color="var(--brand)" /></div>
       <h2>CFB Computer Rankings</h2>
       <p>Download season data to get started. This pulls teams, games, and ratings from the College Football Data API and stores them locally.</p>
       <DataDownload />

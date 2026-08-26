@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Search } from 'lucide-react'
 
 export default function GlobalSearch() {
   const [q, setQ] = useState('')
@@ -28,13 +29,14 @@ export default function GlobalSearch() {
 
   return (
     <div ref={boxRef} style={{ position: 'relative', minWidth: 0 }}>
+      <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)', pointerEvents: 'none' }} />
       <input
         className="input"
-        placeholder="🔍 Search teams or voters…"
+        placeholder="Search teams or voters…"
         value={q}
         onChange={e => { setQ(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
-        style={{ fontSize: 12, padding: '6px 10px', width: 180 }}
+        style={{ fontSize: 12, padding: '6px 10px 6px 28px', width: 180 }}
       />
       {open && q.trim().length >= 2 && (
         <div style={{

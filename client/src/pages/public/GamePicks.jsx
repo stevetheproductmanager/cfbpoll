@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
 import { useToast } from '../../store/ToastContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
+import { Goal, Save, Check, X, Trophy } from 'lucide-react'
 
 export default function GamePicks() {
   const { user, authHeaders } = useAuth()
@@ -61,7 +62,7 @@ export default function GamePicks() {
   if (!user) {
     return (
       <div style={{ maxWidth: 600, margin: '0 auto', padding: '24px 24px 80px', textAlign: 'center' }}>
-        <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8 }}>🏈 Weekly Game Picks</h1>
+        <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Goal size={24} /> Weekly Game Picks</h1>
         <div className="card"><p style={{ color: 'var(--text-secondary)' }}>Sign in to pick winners each week.</p>
           <Link to="/login" className="btn btn-primary" style={{ marginTop: 12, display: 'inline-block', textDecoration: 'none' }}>Sign In</Link>
         </div>
@@ -76,7 +77,7 @@ export default function GamePicks() {
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px 24px 80px' }}>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>🏈 Weekly Game Picks</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Goal size={26} /> Weekly Game Picks</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Pick winners for this week's games — lighter-weight than the Top 25 ballot, scored automatically once games finish.</p>
       </div>
 
@@ -112,8 +113,8 @@ export default function GamePicks() {
                   </div>
                 ))}
               </div>
-              <button className="btn btn-primary" onClick={save} disabled={saving} style={{ marginTop: 12, width: '100%' }}>
-                {saving ? 'Saving…' : '💾 Save Picks'}
+              <button className="btn btn-primary" onClick={save} disabled={saving} style={{ marginTop: 12, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                {saving ? 'Saving…' : <><Save size={13} /> Save Picks</>}
               </button>
             </div>
           )}
@@ -136,8 +137,8 @@ export default function GamePicks() {
                       </span>
                       <span style={{ fontWeight: 700 }}>{g.awayScore}-{g.homeScore}</span>
                       {myPick && (
-                        <span style={{ fontSize: 11, fontWeight: 700, color: correct ? 'var(--ok)' : 'var(--err)' }}>
-                          {correct ? '✓ picked right' : '✗ picked ' + myPick}
+                        <span style={{ fontSize: 11, fontWeight: 700, color: correct ? 'var(--ok)' : 'var(--err)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          {correct ? <><Check size={11} /> picked right</> : <><X size={11} /> picked {myPick}</>}
                         </span>
                       )}
                     </div>
@@ -151,7 +152,7 @@ export default function GamePicks() {
 
       {leaderboard.length > 0 && (
         <div className="card" style={{ marginTop: 12 }}>
-          <h3 style={{ marginBottom: 10 }}>🏆 Pick Accuracy Leaderboard</h3>
+          <h3 style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}><Trophy size={15} /> Pick Accuracy Leaderboard</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {leaderboard.slice(0, 10).map((s, i) => (
               <div key={s.userId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 8px', fontSize: 13 }}>

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
+import { ArrowLeftRight, Shuffle, ArrowRight } from 'lucide-react'
 
 const METRIC_LABELS = { efficiency: 'Efficiency', results: 'Results', sos: 'SOS', quality: 'Résumé Quality', momentum: 'Momentum', conference: 'Conf. Strength' }
 const METRIC_COLORS = { efficiency: 'var(--brand)', results: 'var(--ok)', sos: 'var(--warn)', quality: 'var(--accent)', momentum: 'var(--err)', conference: '#a78bfa' }
@@ -56,8 +57,8 @@ export default function CustomPollView() {
           ))}
         </div>
         <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Link to={`/custom-poll/diff?a=${poll._id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}>⇄ Compare</Link>
-          <Link to={`/custom-poll?remix=${poll._id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}>🔀 Remix</Link>
+          <Link to={`/custom-poll/diff?a=${poll._id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ArrowLeftRight size={12} /> Compare</Link>
+          <Link to={`/custom-poll?remix=${poll._id}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Shuffle size={12} /> Remix</Link>
           <ShareButton title={poll.name} text={`Check out this custom computer poll "${poll.name}" on Poll Position`} />
         </div>
       </div>
@@ -86,7 +87,7 @@ export default function CustomPollView() {
       </div>
 
       <div style={{ textAlign: 'center', marginTop: 16 }}>
-        <Link to="/custom-poll" style={{ fontSize: 13 }}>→ Build your own computer poll</Link>
+        <Link to="/custom-poll" style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>Build your own computer poll <ArrowRight size={13} /></Link>
       </div>
     </div>
   )

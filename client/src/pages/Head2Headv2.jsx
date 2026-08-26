@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useRankings } from '../store/RankingsContext.jsx'
 import ConfBadge from '../components/ConfBadge.jsx'
+import { X } from 'lucide-react'
 
 const fmt2 = n => n == null ? '—' : Number(n).toFixed(2)
 const fmt3 = n => n == null ? '—' : Number(n).toFixed(3)
@@ -114,7 +115,7 @@ function TeamPicker({ label, value, onChange, teams }) {
           onKeyDown={e => { if (e.key === 'Enter' && filtered[0]) { onChange(filtered[0].school); setQ(filtered[0].school); setOpen(false) } }}
         />
         {value && (
-          <button onClick={() => { onChange(''); setQ('') }} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: '0 2px', fontSize: 16, lineHeight: 1 }} title="Clear">✕</button>
+          <button onClick={() => { onChange(''); setQ('') }} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 8, margin: -8, lineHeight: 1, display: 'inline-flex' }} title="Clear"><X size={14} /></button>
         )}
       </div>
       {open && (

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../store/AuthContext.jsx'
 import { useToast } from '../store/ToastContext.jsx'
+import { MessageSquare } from 'lucide-react'
 
 function timeAgo(iso) {
   const diff = Date.now() - new Date(iso).getTime()
@@ -53,7 +54,7 @@ export default function TeamComments({ team }) {
 
   return (
     <div className="card" style={{ marginTop: 0 }}>
-      <h3 style={{ marginBottom: 10 }}>💬 Discussion</h3>
+      <h3 style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}><MessageSquare size={15} /> Discussion</h3>
       {user ? (
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           <input

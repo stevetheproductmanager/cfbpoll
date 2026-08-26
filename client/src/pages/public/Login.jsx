@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
+import { Goal } from 'lucide-react'
 
 const GOOGLE_CLIENT_ID = '777524528673-bf8delse7vq1veai5obmh5auup72jgjr.apps.googleusercontent.com'
 
@@ -60,7 +61,7 @@ export default function Login() {
       background: 'radial-gradient(ellipse at 50% 30%, var(--brand-glow-strong) 0%, transparent 60%)',
     }}>
       <div className="card" style={{ maxWidth: 400, width: '100%', textAlign: 'center', marginTop: 0 }}>
-        <div style={{ fontSize: 48, marginBottom: 12 }}>🏈</div>
+        <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center', color: 'var(--brand)' }}><Goal size={48} /></div>
         <h1 style={{
           fontSize: 28, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4,
           background: 'linear-gradient(135deg, var(--brand), var(--accent))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',

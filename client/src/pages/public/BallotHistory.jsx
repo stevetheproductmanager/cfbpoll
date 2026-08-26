@@ -4,6 +4,7 @@ import { useAuth } from '../../store/AuthContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
 import Badges, { computeBadges } from '../../components/Badges.jsx'
+import { ClipboardList, Flame, ArrowLeft, Monitor } from 'lucide-react'
 
 // Consecutive weeks voted, counting backward from the most recent week that
 // had any ballots at all — a missed latest week breaks the streak.
@@ -85,7 +86,7 @@ export default function BallotHistory() {
           {isMe ? 'Your' : `${data?.userName || 'Voter'}'s`} Ballot History
         </h1>
         <div className="card" style={{ padding: '40px 24px' }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
+          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center', color: 'var(--muted)' }}><ClipboardList size={48} /></div>
           <p style={{ color: 'var(--text-secondary)' }}>No ballots submitted yet.</p>
         </div>
       </div>
@@ -102,14 +103,14 @@ export default function BallotHistory() {
         }}>{isMe ? 'Your' : `${data.userName}'s`} Ballot History</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
           {data.weeks.length} week{data.weeks.length !== 1 ? 's' : ''} of picks
-          {voterStats?.streak >= 3 && <span style={{ marginLeft: 8, color: 'var(--warn)', fontWeight: 700 }}>🔥 {voterStats.streak}-week streak</span>}
+          {voterStats?.streak >= 3 && <span style={{ marginLeft: 8, color: 'var(--warn)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Flame size={13} /> {voterStats.streak}-week streak</span>}
         </p>
         <Badges badges={computeBadges({ voterStats, weeks: data.weeks })} />
       </div>
 
       {/* Back to leaderboard + share */}
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Link to="/leaderboard" style={{ fontSize: 13, color: 'var(--brand2)' }}>← Back to Leaderboard</Link>
+        <Link to="/leaderboard" style={{ fontSize: 13, color: 'var(--brand2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ArrowLeft size={13} /> Back to Leaderboard</Link>
         <ShareButton title={`${data.userName}'s Ballot History`} text={`Check out ${isMe ? 'my' : `${data.userName}'s`} Top 25 ballots on Poll Position`} />
       </div>
 
@@ -141,7 +142,7 @@ export default function BallotHistory() {
       {weekData && (
         <div className="card" style={{ marginTop: 0, padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0 }}>Week {weekData.week} Ballot {weekData.ballotType === 'computer' && <span style={{ fontSize: 11, marginLeft: 6 }} title="Computer ballot">🖥️</span>}</h3>
+            <h3 style={{ margin: 0 }}>Week {weekData.week} Ballot {weekData.ballotType === 'computer' && <Monitor size={13} title="Computer ballot" style={{ marginLeft: 6, verticalAlign: -2 }} />}</h3>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>{weekData.picks.length} teams</span>
           </div>
           {weekData.note && (
@@ -168,7 +169,7 @@ export default function BallotHistory() {
                         <TeamLogo name={pick.team} size={24} />
                         <span style={{ fontWeight: 600, fontSize: 14 }}>{pick.team}</span>
                         {pick.isNew && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--ok)', background: 'var(--ok-muted)', padding: '1px 5px', borderRadius: 4 }}>NEW</span>}
-                        {isBold && <span title="Marked as a bold/confident pick" style={{ fontSize: 9, fontWeight: 700, color: 'var(--warn)', background: 'var(--warn-muted, rgba(230,180,40,0.15))', padding: '1px 5px', borderRadius: 4 }}>🔥 BOLD</span>}
+                        {isBold && <span title="Marked as a bold/confident pick" style={{ fontSize: 9, fontWeight: 700, color: 'var(--warn)', background: 'var(--warn-muted, rgba(230,180,40,0.15))', padding: '1px 5px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 2 }}><Flame size={9} /> BOLD</span>}
                       </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>

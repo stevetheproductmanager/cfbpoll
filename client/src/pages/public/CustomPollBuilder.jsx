@@ -6,6 +6,10 @@ import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
 import { DEFAULT_ADVANCED as ALGO_DEFAULT_ADVANCED } from '../../lib/rankAlgo.js'
 import { CURRENT_SEASON } from '../../lib/season.js'
+import {
+  Scale, ClipboardList, Eye, Bot, Flame, Landmark, Lightbulb, Settings,
+  SlidersHorizontal, BarChart3, RotateCw, Pause, Radio, ArrowLeftRight, Save, Image, Trophy,
+} from 'lucide-react'
 
 const DEFAULT_WEIGHTS = { efficiency: 38, results: 25, sos: 15, quality: 12, momentum: 10, conference: 0 }
 const DEFAULT_ADVANCED = { ...ALGO_DEFAULT_ADVANCED }
@@ -21,12 +25,12 @@ const METRICS = [
 
 // Quick-start weight combos so the sliders aren't intimidating on first visit.
 const PRESETS = [
-  { key: 'balanced', label: '⚖️ Balanced', weights: DEFAULT_WEIGHTS },
-  { key: 'resume', label: '📋 Résumé Voter', weights: { efficiency: 15, results: 30, sos: 20, quality: 30, momentum: 5, conference: 0 } },
-  { key: 'eyeball', label: '👁️ Eyeball Test', weights: { efficiency: 55, results: 25, sos: 5, quality: 5, momentum: 10, conference: 0 } },
-  { key: 'analytics', label: '🤖 Analytics Nerd', weights: { efficiency: 45, results: 10, sos: 25, quality: 10, momentum: 10, conference: 0 } },
-  { key: 'hot', label: '🔥 Hot Hand', weights: { efficiency: 25, results: 20, sos: 10, quality: 10, momentum: 35, conference: 0 } },
-  { key: 'blueblood', label: '🏛️ Blue Blood', weights: { efficiency: 30, results: 20, sos: 10, quality: 15, momentum: 5, conference: 20 } },
+  { key: 'balanced', label: 'Balanced', icon: Scale, weights: DEFAULT_WEIGHTS },
+  { key: 'resume', label: 'Résumé Voter', icon: ClipboardList, weights: { efficiency: 15, results: 30, sos: 20, quality: 30, momentum: 5, conference: 0 } },
+  { key: 'eyeball', label: 'Eyeball Test', icon: Eye, weights: { efficiency: 55, results: 25, sos: 5, quality: 5, momentum: 10, conference: 0 } },
+  { key: 'analytics', label: 'Analytics Nerd', icon: Bot, weights: { efficiency: 45, results: 10, sos: 25, quality: 10, momentum: 10, conference: 0 } },
+  { key: 'hot', label: 'Hot Hand', icon: Flame, weights: { efficiency: 25, results: 20, sos: 10, quality: 10, momentum: 35, conference: 0 } },
+  { key: 'blueblood', label: 'Blue Blood', icon: Landmark, weights: { efficiency: 30, results: 20, sos: 10, quality: 15, momentum: 5, conference: 20 } },
 ]
 
 // Advanced tuning knobs — each is a 0-100 slider whose midpoint/default
@@ -50,7 +54,7 @@ function AdvancedTuningTip({ onDismiss }) {
       display: 'flex', gap: 10, background: 'var(--brand-glow)',
       border: '1px solid var(--border-accent)', borderRadius: 10, padding: '10px 12px', marginBottom: 12,
     }}>
-      <span style={{ fontSize: 18, flexShrink: 0 }}>💡</span>
+      <Lightbulb size={18} style={{ flexShrink: 0 }} />
       <div style={{ flex: 1 }}>
         <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
           <strong>What these do:</strong> the 6 metrics above decide <em>what</em> matters; these knobs tune <em>how</em> each one is calculated —
@@ -205,7 +209,7 @@ export default function CustomPollBuilder() {
 
   const setWeight = (key, value) => setWeights(prev => ({ ...prev, [key]: value }))
   const setAdvancedKnob = (key, value) => setAdvanced(prev => ({ ...prev, [key]: value }))
-  const applyPreset = (p) => { setWeights({ ...DEFAULT_WEIGHTS, ...p.weights }); toast.info(`Loaded "${p.label.split(' ').slice(1).join(' ')}" weights`) }
+  const applyPreset = (p) => { setWeights({ ...DEFAULT_WEIGHTS, ...p.weights }); toast.info(`Loaded "${p.label}" weights`) }
   const resetAdvanced = () => setAdvanced(DEFAULT_ADVANCED)
   const isAdvancedDefault = useMemo(() => Object.keys(DEFAULT_ADVANCED).every(k => advanced[k] === DEFAULT_ADVANCED[k]), [advanced])
 
@@ -301,9 +305,9 @@ export default function CustomPollBuilder() {
           Design your own ranking algorithm. Drag the sliders to weight what matters to you, compute a live Top 25 off this season's real data, then save it as your own poll.
         </p>
         <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginTop: 4 }}>
-          <Link to="/custom-poll/gallery" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>🖼️ Browse the public gallery →</Link>
-          <Link to="/custom-poll/diff" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>⇄ Compare two polls →</Link>
-          <Link to="/custom-poll/leaderboard" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>🏆 Accuracy leaderboard →</Link>
+          <Link to="/custom-poll/gallery" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Image size={12} /> Browse the public gallery →</Link>
+          <Link to="/custom-poll/diff" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}><ArrowLeftRight size={12} /> Compare two polls →</Link>
+          <Link to="/custom-poll/leaderboard" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Trophy size={12} /> Accuracy leaderboard →</Link>
         </div>
       </div>
 
@@ -317,9 +321,9 @@ export default function CustomPollBuilder() {
               length instead of growing to 3 sections + sliders at once. */}
           <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
             {[
-              { key: 'weights', label: '🎚️ Weights' },
-              { key: 'advanced', label: '⚙️ Advanced', badge: !isAdvancedDefault },
-              { key: 'backtest', label: '📊 Backtest' },
+              { key: 'weights', label: 'Weights', icon: SlidersHorizontal },
+              { key: 'advanced', label: 'Advanced', icon: Settings, badge: !isAdvancedDefault },
+              { key: 'backtest', label: 'Backtest', icon: BarChart3 },
             ].map(t => (
               <button key={t.key} onClick={() => setConfigTab(t.key)}
                 style={{
@@ -328,7 +332,7 @@ export default function CustomPollBuilder() {
                   borderBottom: configTab === t.key ? '2px solid var(--brand2)' : '2px solid transparent',
                   color: configTab === t.key ? 'var(--brand2)' : 'var(--text-secondary)', marginBottom: -1,
                 }}>
-                {t.label}
+                <t.icon size={14} /> {t.label}
                 {t.badge && <span style={{ width: 6, height: 6, borderRadius: 99, background: 'var(--brand2)' }} />}
               </button>
             ))}
@@ -339,8 +343,8 @@ export default function CustomPollBuilder() {
               <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Values are automatically normalized to 100%.</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
                 {PRESETS.map(p => (
-                  <button key={p.key} className="btn btn-ghost" onClick={() => applyPreset(p)} style={{ fontSize: 11, padding: '4px 8px' }}>
-                    {p.label}
+                  <button key={p.key} className="btn btn-ghost" onClick={() => applyPreset(p)} style={{ fontSize: 11, padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <p.icon size={12} /> {p.label}
                   </button>
                 ))}
               </div>
@@ -404,8 +408,8 @@ export default function CustomPollBuilder() {
           )}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-            <button className="btn btn-primary" onClick={compute} disabled={loading} style={{ flex: 1 }}>
-              {loading ? 'Computing…' : '⚙️ Compute Rankings'}
+            <button className="btn btn-primary" onClick={compute} disabled={loading} style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              {loading ? 'Computing…' : <><Settings size={13} /> Compute Rankings</>}
             </button>
             <button className="btn btn-ghost" onClick={() => { setWeights(DEFAULT_WEIGHTS); setAdvanced(DEFAULT_ADVANCED) }} style={{ fontSize: 12 }}>Reset</button>
           </div>
@@ -415,8 +419,8 @@ export default function CustomPollBuilder() {
               <h4 style={{ marginBottom: 8, fontSize: 13 }}>Save This Poll</h4>
               <input className="input" style={{ width: '100%', marginBottom: 8 }} placeholder={`Name your poll (e.g. "Steve's Ballot-o-Matic")`}
                 value={name} onChange={e => setName(e.target.value)} maxLength={60} />
-              <button className="btn btn-primary" onClick={save} disabled={saving} style={{ width: '100%' }}>
-                {saving ? 'Saving…' : '💾 Save My Poll'}
+              <button className="btn btn-primary" onClick={save} disabled={saving} style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                {saving ? 'Saving…' : <><Save size={13} /> Save My Poll</>}
               </button>
             </div>
           )}
@@ -492,7 +496,7 @@ export default function CustomPollBuilder() {
             </div>
           ) : (
             <div className="card" style={{ marginTop: 0, textAlign: 'center', padding: '60px 24px', color: 'var(--muted)' }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>⚙️</div>
+              <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}><Settings size={40} /></div>
               Set your weights and click Compute to see your Top 25.
             </div>
           )}
@@ -511,14 +515,14 @@ export default function CustomPollBuilder() {
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>#1 {p.rankings?.[0]?.team || '—'} · saved {new Date(p.updatedAt).toLocaleDateString()}</div>
                     </div>
-                    <button className="btn btn-ghost" onClick={() => recomputePoll(p)} style={{ fontSize: 11, padding: '4px 10px' }} title="Recompute against current data">↻ Refresh</button>
+                    <button className="btn btn-ghost" onClick={() => recomputePoll(p)} style={{ fontSize: 11, padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Recompute against current data"><RotateCw size={11} /> Refresh</button>
                     <button
                       className="btn btn-ghost" onClick={() => togglePublish(p)} disabled={publishing === p._id}
-                      style={{ fontSize: 11, padding: '4px 10px', color: p.published ? 'var(--warn)' : 'var(--ok)' }}
+                      style={{ fontSize: 11, padding: '4px 10px', color: p.published ? 'var(--warn)' : 'var(--ok)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                       title={p.published ? 'Stop auto-submitting this as your Computer ballot' : 'Auto-submit this as your Computer ballot each week + list in the public gallery'}
-                    >{p.published ? '⏸ Unpublish' : '📡 Publish'}</button>
+                    >{p.published ? <><Pause size={11} /> Unpublish</> : <><Radio size={11} /> Publish</>}</button>
                     <Link to={`/custom-poll/${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none' }}>View</Link>
-                    <Link to={`/custom-poll/diff?a=${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none' }}>⇄ Compare</Link>
+                    <Link to={`/custom-poll/diff?a=${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ArrowLeftRight size={11} /> Compare</Link>
                     <ShareButton title={p.name} text={`Check out my custom computer poll "${p.name}" on Poll Position`} url={`${window.location.origin}/custom-poll/${p._id}`} />
                     <button className="btn btn-ghost" onClick={() => deletePoll(p._id)} style={{ fontSize: 11, padding: '4px 10px', color: 'var(--err)' }}>Delete</button>
                   </div>

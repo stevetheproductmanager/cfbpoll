@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react'
+import { CheckCircle2, XCircle, Info } from 'lucide-react'
 
 const ToastContext = createContext()
 
@@ -47,7 +48,7 @@ export function useToast() {
   return useContext(ToastContext)
 }
 
-const ICONS = { success: '✓', error: '✕', info: 'ℹ' }
+const ICONS = { success: CheckCircle2, error: XCircle, info: Info }
 const COLORS = {
   success: { bg: 'var(--ok-muted)', border: 'var(--ok)', icon: 'var(--ok)' },
   error: { bg: 'var(--err-muted)', border: 'var(--err)', icon: 'var(--err)' },
@@ -60,6 +61,7 @@ function ToastContainer({ toasts, onRemove }) {
     <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 300, display: 'flex', flexDirection: 'column-reverse', gap: 8, maxWidth: 400 }}>
       {toasts.map(t => {
         const c = COLORS[t.type] || COLORS.info
+        const Icon = ICONS[t.type] || Info
         return (
           <div key={t.id} style={{
             display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
@@ -68,7 +70,7 @@ function ToastContainer({ toasts, onRemove }) {
             animation: 'toastIn 250ms cubic-bezier(0.16, 1, 0.3, 1)',
             cursor: 'pointer',
           }} onClick={() => onRemove(t.id)}>
-            <span style={{ fontSize: 16, fontWeight: 800, color: c.icon, flexShrink: 0 }}>{ICONS[t.type]}</span>
+            <Icon size={18} style={{ color: c.icon, flexShrink: 0 }} />
             <span style={{ flex: 1 }}>{t.message}</span>
           </div>
         )

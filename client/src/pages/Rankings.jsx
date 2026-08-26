@@ -5,6 +5,7 @@ import { confColor } from '../lib/conferenceUtils.js'
 import ConfBadge from '../components/ConfBadge.jsx'
 import { useTheme } from '../theme/ThemeProvider.jsx'
 import TeamLogo from '../components/TeamLogo.jsx'
+import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 const fmt = (n, d=3) => (typeof n === 'number' ? n : 0).toFixed(d)
 const fmt0 = (n) => (typeof n === 'number' ? Math.round(n) : 0)
@@ -35,7 +36,7 @@ function CopyButton({ payload, teamName, logo }) {
           <img src={logo} alt="" width={24} height={24} style={{ borderRadius: 2, display:'block' }} />
         )}
         {ok ? (
-          <span className="checkmark" aria-hidden="true">✓</span>
+          <span className="checkmark" aria-hidden="true"><Check size={14} /></span>
         ) : (
           <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18"
             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -163,7 +164,7 @@ function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
       <div className="modal-container" onClick={onClose}>
         <aside className="modal-panel" onClick={e => e.stopPropagation()}>
           <div className="modal-header">
-            <button className="nav-btn" onClick={onPrev} title="Previous (←)">←</button>
+            <button className="nav-btn" onClick={onPrev} title="Previous (←)"><ChevronLeft size={18} /></button>
             <div className="drawer-title">
               <div className="drawer-rank">#{rank}</div>
               {team.logo && <img src={team.logo} alt="" style={{ width: 32, height: 32, objectFit: 'contain' }} />}
@@ -171,8 +172,8 @@ function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
               <ConfBadge conference={conference} size={24} />
             </div>
             <div style={{ display: 'flex', gap: 4 }}>
-              <button className="nav-btn" onClick={onNext} title="Next (→)">→</button>
-              <button className="nav-btn" onClick={onClose} title="Close (Esc)">✕</button>
+              <button className="nav-btn" onClick={onNext} title="Next (→)"><ChevronRight size={18} /></button>
+              <button className="nav-btn" onClick={onClose} title="Close (Esc)"><X size={18} /></button>
             </div>
           </div>
 

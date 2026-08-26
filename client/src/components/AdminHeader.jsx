@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../store/AuthContext.jsx'
 import { useRankings } from '../store/RankingsContext.jsx'
 import ThemeToggle from './ThemeToggle.jsx'
+import { Goal, ArrowLeft } from 'lucide-react'
 
 function YearPicker() {
   const { year, setYear } = useRankings()
@@ -105,15 +106,15 @@ export default function AdminHeader({ group, subTab, onTabClick }) {
       <div className="topbar" style={{ display: 'flex' }}>
         <div className="topbar-inner" style={{ display: 'flex', alignItems: 'center', flexWrap: 'nowrap' }}>
           <div className="brand" style={{ display: 'flex', alignItems: 'center' }}>
-            <span style={{ fontSize: 22 }}>🏈</span>
+            <Goal size={22} style={{ display: 'block' }} />
             <span>Poll Position <span className="brand-accent">Admin</span></span>
           </div>
           <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <WeekStatusBanner />
             {hasData && <YearPicker />}
             <ThemeToggle />
-            <Link to="/" className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}>
-              ← Public Site
+            <Link to="/" className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <ArrowLeft size={13} /> Public Site
             </Link>
             <button className="btn btn-ghost" onClick={logout} style={{ fontSize: 12, padding: '4px 10px' }}>
               Sign Out

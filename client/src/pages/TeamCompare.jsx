@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useRankings } from '../store/RankingsContext.jsx'
 import ConfBadge from '../components/ConfBadge.jsx'
+import { X, ArrowDown } from 'lucide-react'
 
 const clamp = (v, lo=0, hi=1) => Math.max(lo, Math.min(hi, v))
 const fmt1 = n => n == null ? '—' : Number(n).toFixed(1)
@@ -88,7 +89,7 @@ function TeamPicker({ label, value, onChange, teams }) {
           onKeyDown={e => { if (e.key === 'Enter' && filtered[0]) { onChange(filtered[0].school); setQ(filtered[0].school); setOpen(false) } }}
         />
         {value && (
-          <button onClick={() => { onChange(''); setQ(''); }} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: '0 2px', fontSize: 16, lineHeight: 1 }} title="Clear">✕</button>
+          <button onClick={() => { onChange(''); setQ(''); }} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 8, margin: -8, lineHeight: 1, display: 'inline-flex' }} title="Clear"><X size={14} /></button>
         )}
       </div>
       {open && (
@@ -134,7 +135,7 @@ function TraitRow({ label, a, b, better = 'high', fmt = x => x, tip }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: 10, alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ fontSize: 12, color: 'var(--text-secondary)' }} title={tip}>
-        {label}{better === 'low' && <span style={{ marginLeft: 4, color: 'var(--muted)', fontSize: 10 }}>↓</span>}
+        {label}{better === 'low' && <ArrowDown size={10} style={{ marginLeft: 4, color: 'var(--muted)', verticalAlign: -1 }} />}
       </div>
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: aWin ? 'var(--ok)' : 'var(--text)' }}>{av}</div>

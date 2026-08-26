@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
+import { Image, ArrowLeft, Brain, ArrowLeftRight, Shuffle } from 'lucide-react'
 
 const METRIC_LABELS = { efficiency: 'Efficiency', results: 'Results', sos: 'SOS', quality: 'Quality', momentum: 'Momentum', conference: 'Conf. Strength' }
 
@@ -33,11 +34,11 @@ export default function CustomPollGallery() {
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '24px 24px 80px' }}>
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>🖼️ Computer Poll Gallery</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Image size={26} /> Computer Poll Gallery</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 620, margin: '0 auto' }}>
           Published custom polls from the community — browse how others weight the model, or remix one as a starting point for your own.
         </p>
-        <Link to="/custom-poll" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>← Build your own</Link>
+        <Link to="/custom-poll" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}><ArrowLeft size={12} /> Build your own</Link>
       </div>
 
       {polls === null ? (
@@ -50,7 +51,7 @@ export default function CustomPollGallery() {
         <>
           {crowd.length > 0 && (
             <div className="card" style={{ marginBottom: 20 }}>
-              <h3 style={{ marginBottom: 4 }}>🧠 The Computer Crowd</h3>
+              <h3 style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}><Brain size={15} /> The Computer Crowd</h3>
               <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>Average rank across all {polls.length} published poll{polls.length === 1 ? '' : 's'}.</p>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 {crowd.slice(0, 10).map((t, i) => (
@@ -88,8 +89,8 @@ export default function CustomPollGallery() {
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <Link to={`/custom-poll/${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none', flex: 1, textAlign: 'center' }}>View Full 25</Link>
-                    <Link to={`/custom-poll/diff?a=${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none' }} title="Compare against another poll">⇄</Link>
-                    <Link to={`/custom-poll?remix=${p._id}`} className="btn btn-primary" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none', flex: 1, textAlign: 'center' }}>🔀 Remix</Link>
+                    <Link to={`/custom-poll/diff?a=${p._id}`} className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }} title="Compare against another poll"><ArrowLeftRight size={12} /></Link>
+                    <Link to={`/custom-poll?remix=${p._id}`} className="btn btn-primary" style={{ fontSize: 11, padding: '4px 10px', textDecoration: 'none', flex: 1, textAlign: 'center', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}><Shuffle size={11} /> Remix</Link>
                   </div>
                 </div>
               )

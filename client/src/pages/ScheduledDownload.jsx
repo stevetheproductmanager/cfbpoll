@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useToast } from '../store/ToastContext.jsx'
 import { useAuth } from '../store/AuthContext.jsx'
+import { CheckCircle2, SkipForward, AlertTriangle } from 'lucide-react'
 
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 const CURRENT_YEAR = new Date().getFullYear()
@@ -89,9 +90,9 @@ function BackfillPanel() {
 
       {status && (status.done.length > 0 || status.skipped.length > 0 || status.failed.length > 0) && (
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12, fontSize: 12 }}>
-          <span>✅ Done: {status.done.join(', ') || '—'}</span>
-          <span>⏭ Skipped (already had data): {status.skipped.join(', ') || '—'}</span>
-          {status.failed.length > 0 && <span style={{ color: 'var(--err)' }}>⚠ Failed: {status.failed.join(', ')}</span>}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><CheckCircle2 size={13} style={{ color: 'var(--ok)' }} /> Done: {status.done.join(', ') || '—'}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SkipForward size={13} /> Skipped (already had data): {status.skipped.join(', ') || '—'}</span>
+          {status.failed.length > 0 && <span style={{ color: 'var(--err)', display: 'inline-flex', alignItems: 'center', gap: 5 }}><AlertTriangle size={13} /> Failed: {status.failed.join(', ')}</span>}
         </div>
       )}
 
@@ -205,8 +206,8 @@ export default function ScheduledDownload() {
         const last = schedLog[schedLog.length - 1]
         if (!last || !/fail|error/i.test(last.message)) return null
         return (
-          <div style={{ background: 'var(--err-muted, rgba(248,113,113,0.1))', border: '1px solid var(--err)', color: 'var(--err)', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 16 }}>
-            ⚠ Last run failed: {last.message}
+          <div style={{ background: 'var(--err-muted, rgba(248,113,113,0.1))', border: '1px solid var(--err)', color: 'var(--err)', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <AlertTriangle size={14} /> Last run failed: {last.message}
           </div>
         )
       })()}

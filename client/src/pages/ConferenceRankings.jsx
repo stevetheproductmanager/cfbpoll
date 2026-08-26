@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useRankings } from '../store/RankingsContext.jsx'
 import { confColor } from '../lib/conferenceUtils.js'
 import ConfBadge from '../components/ConfBadge.jsx'
+import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 const isFiniteNum = (v) => Number.isFinite(Number(v))
@@ -125,7 +126,7 @@ function CopyButton({ payload }) {
       await navigator.clipboard.writeText(payload)
       setOk(true); setTimeout(() => setOk(false), 1200)
     }} title="Copy summary" style={{ width: '4.5em', display: 'inline-flex', justifyContent: 'center', alignItems: 'center' }}>
-      {ok ? '✓' : 'Copy'}
+      {ok ? <Check size={14} /> : 'Copy'}
     </button>
   )
 }
@@ -174,15 +175,15 @@ function Drawer({ open, row, onClose, onPrev, onNext }) {
       <div className="modal-container" onClick={onClose}>
         <div className="modal-panel" onClick={e => e.stopPropagation()}>
           <div className="modal-header">
-            <button className="nav-btn" onClick={onPrev} title="Previous (←)">←</button>
+            <button className="nav-btn" onClick={onPrev} title="Previous (←)"><ChevronLeft size={18} /></button>
             <div className="drawer-title">
               <div className="drawer-rank">#{rank}</div>
               <div className="drawer-name">{conference}</div>
               <ConfBadge conference={conference} size={24} />
             </div>
             <div style={{ display: 'flex', gap: 4 }}>
-              <button className="nav-btn" onClick={onNext} title="Next (→)">→</button>
-              <button className="nav-btn" onClick={onClose} title="Close (Esc)">✕</button>
+              <button className="nav-btn" onClick={onNext} title="Next (→)"><ChevronRight size={18} /></button>
+              <button className="nav-btn" onClick={onClose} title="Close (Esc)"><X size={18} /></button>
             </div>
           </div>
 

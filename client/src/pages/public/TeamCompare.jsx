@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
+import { Swords } from 'lucide-react'
 
 function useTeamBundle(name) {
   const [detail, setDetail] = useState(null)
@@ -85,7 +86,7 @@ export default function TeamCompare() {
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 24px 80px' }}>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>⚔️ Team Comparison</h1>
+        <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Swords size={24} /> Team Comparison</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Pick two teams to compare rank, record, and recent results side by side.</p>
       </div>
 

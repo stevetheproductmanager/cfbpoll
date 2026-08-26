@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { Trophy, ArrowLeft } from 'lucide-react'
 
 // Scores every published custom poll against actual completed games this
 // season — a ranked team is "predicted" to beat an unranked one, and the
@@ -16,11 +17,11 @@ export default function CustomPollLeaderboard() {
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px 24px 80px' }}>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>🏆 Custom Poll Accuracy</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Trophy size={26} /> Custom Poll Accuracy</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14, maxWidth: 560, margin: '0 auto' }}>
           Every published computer poll, graded against this season's actual game results — how often did its Top 25 correctly predict the winner?
         </p>
-        <Link to="/custom-poll" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600 }}>← Back to builder</Link>
+        <Link to="/custom-poll" style={{ fontSize: 12, color: 'var(--brand2)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}><ArrowLeft size={12} /> Back to builder</Link>
       </div>
 
       {!data ? (

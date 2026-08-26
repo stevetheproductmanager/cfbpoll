@@ -4,18 +4,19 @@ import { useAuth } from '../../store/AuthContext.jsx'
 import { useFavorites } from '../../store/FavoritesContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import DarkHorseTracker from '../../components/DarkHorseTracker.jsx'
+import { Vote, BarChart3, Trophy, TrendingUp, Settings, Clapperboard, Swords, Goal, Award, Star, ArrowRight } from 'lucide-react'
 
 const FEATURES = [
-  { icon: '🗳️', title: 'Your Ballot, Your Voice', desc: 'Rank your Top 25 each week. Drag, drop, done. Your vote actually counts.', to: '/ballot' },
-  { icon: '📊', title: 'Live Consensus', desc: 'See how the community ranks every team in real time. Watch the rankings shift as votes pour in.', to: '/rankings' },
-  { icon: '🏆', title: 'Voter Leaderboard', desc: 'See who nails the consensus and who goes bold. Your accuracy is tracked all season.', to: '/leaderboard' },
-  { icon: '📈', title: 'Visual Poll', desc: 'Explore the rankings as tiers, cards, or bubbles. Track movement week over week.', to: '/visual' },
-  { icon: '⚙️', title: 'Build a Computer Poll', desc: 'Design your own ranking algorithm with sliders, compute a live Top 25, and save it as your own poll.', to: '/custom-poll' },
-  { icon: '🎬', title: 'Weekly Reveal', desc: 'Watch this week\'s Top 25 count down from #25 to #1, reveal-show style.', to: '/reveal' },
-  { icon: '⚔️', title: 'Team Comparison', desc: 'Pick two teams and compare rank, record, and recent results side by side.', to: '/compare' },
-  { icon: '🏈', title: 'Weekly Game Picks', desc: 'Pick winners for this week\'s games — a lighter, more frequent way to play.', to: '/picks' },
-  { icon: '🏆', title: 'CFP Projection', desc: 'A 12-team bracket projected live off the current Top 25.', to: '/cfp-projection' },
-  { icon: '🎖️', title: 'Heisman Straw Poll', desc: 'Vote for the best player in the country, ranked by real season stats.', to: '/heisman' },
+  { icon: Vote, title: 'Your Ballot, Your Voice', desc: 'Rank your Top 25 each week. Drag, drop, done. Your vote actually counts.', to: '/ballot' },
+  { icon: BarChart3, title: 'Live Consensus', desc: 'See how the community ranks every team in real time. Watch the rankings shift as votes pour in.', to: '/rankings' },
+  { icon: Trophy, title: 'Voter Leaderboard', desc: 'See who nails the consensus and who goes bold. Your accuracy is tracked all season.', to: '/leaderboard' },
+  { icon: TrendingUp, title: 'Visual Poll', desc: 'Explore the rankings as tiers, cards, or bubbles. Track movement week over week.', to: '/visual' },
+  { icon: Settings, title: 'Build a Computer Poll', desc: 'Design your own ranking algorithm with sliders, compute a live Top 25, and save it as your own poll.', to: '/custom-poll' },
+  { icon: Clapperboard, title: 'Weekly Reveal', desc: 'Watch this week\'s Top 25 count down from #25 to #1, reveal-show style.', to: '/reveal' },
+  { icon: Swords, title: 'Team Comparison', desc: 'Pick two teams and compare rank, record, and recent results side by side.', to: '/compare' },
+  { icon: Goal, title: 'Weekly Game Picks', desc: 'Pick winners for this week\'s games — a lighter, more frequent way to play.', to: '/picks' },
+  { icon: Trophy, title: 'CFP Projection', desc: 'A 12-team bracket projected live off the current Top 25.', to: '/cfp-projection' },
+  { icon: Award, title: 'Heisman Straw Poll', desc: 'Vote for the best player in the country, ranked by real season stats.', to: '/heisman' },
 ]
 
 function LiveCountdown({ deadline }) {
@@ -61,7 +62,7 @@ function YourTeamsPanel() {
   return (
     <div style={{ maxWidth: 800, margin: '0 auto 32px', padding: '0 24px' }}>
       <div className="card" style={{ marginTop: 0 }}>
-        <h3 style={{ marginBottom: 10, fontSize: 15 }}>★ Your Teams</h3>
+        <h3 style={{ marginBottom: 10, fontSize: 15, display: 'flex', alignItems: 'center', gap: 6 }}><Star size={15} /> Your Teams</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {favorites.map(team => {
             const t = rankMap.get(team)
@@ -110,8 +111,8 @@ function BiggestMovers() {
     <div style={{ maxWidth: 800, margin: '0 auto 32px', padding: '0 24px' }}>
       <div className="card" style={{ marginTop: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <h3 style={{ fontSize: 15, margin: 0 }}>📈 Biggest Movers — Week {consensus.week}</h3>
-          <Link to="/rankings" style={{ fontSize: 12, fontWeight: 600 }}>See all →</Link>
+          <h3 style={{ fontSize: 15, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}><TrendingUp size={15} /> Biggest Movers — Week {consensus.week}</h3>
+          <Link to="/rankings" style={{ fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>See all <ArrowRight size={12} /></Link>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {movers.map(t => (
@@ -192,8 +193,8 @@ function DashboardCard({ dashboard }) {
                   </div>
                 ))}
               </div>
-              <Link to="/rankings" style={{ fontSize: 12, fontWeight: 600, marginTop: 8, display: 'inline-block' }}>
-                View full rankings →
+              <Link to="/rankings" style={{ fontSize: 12, fontWeight: 600, marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                View full rankings <ArrowRight size={12} />
               </Link>
             </div>
           )}
@@ -223,7 +224,7 @@ export default function Landing() {
         textAlign: 'center', padding: '80px 24px 48px',
         background: 'radial-gradient(ellipse at 50% 0%, var(--brand-glow-strong) 0%, transparent 70%)',
       }}>
-        <div style={{ fontSize: 64, marginBottom: 16, filter: 'drop-shadow(0 4px 24px rgba(77, 142, 255, 0.4))' }}>🏈</div>
+        <div style={{ marginBottom: 16, filter: 'drop-shadow(0 4px 24px rgba(77, 142, 255, 0.4))', display: 'flex', justifyContent: 'center', color: 'var(--brand)' }}><Goal size={64} /></div>
         <h1 style={{
           fontSize: 'clamp(36px, 6vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: 12,
         }}>
@@ -240,8 +241,8 @@ export default function Landing() {
               <Link to="/ballot" className="btn btn-primary" style={{ padding: '12px 32px', fontSize: 16, fontWeight: 700, borderRadius: 12, textDecoration: 'none' }}>
                 Submit Your Ballot
               </Link>
-              <Link to="/for-you" className="btn" style={{ padding: '12px 24px', fontSize: 16, borderRadius: 12, textDecoration: 'none' }}>
-                ⭐ For You
+              <Link to="/for-you" className="btn" style={{ padding: '12px 24px', fontSize: 16, borderRadius: 12, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Star size={15} /> For You
               </Link>
             </>
           ) : (
@@ -269,7 +270,7 @@ export default function Landing() {
       }}>
         {(user || showAllFeatures ? FEATURES : FEATURES.filter(f => HIGHLIGHT_KEYS.includes(f.title))).map(f => (
           <Link key={f.title} to={f.to} className="card" style={{ textAlign: 'center', marginTop: 0, textDecoration: 'none', color: 'inherit' }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>{f.icon}</div>
+            <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center', color: 'var(--brand2)' }}><f.icon size={32} /></div>
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{f.title}</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5 }}>{f.desc}</p>
           </Link>
@@ -277,8 +278,8 @@ export default function Landing() {
       </div>
       {!user && !showAllFeatures && (
         <div style={{ textAlign: 'center', marginTop: -60, marginBottom: 80 }}>
-          <button className="btn btn-ghost" onClick={() => setShowAllFeatures(true)} style={{ fontSize: 13, padding: '8px 20px' }}>
-            See everything else you can do →
+          <button className="btn btn-ghost" onClick={() => setShowAllFeatures(true)} style={{ fontSize: 13, padding: '8px 20px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            See everything else you can do <ArrowRight size={13} />
           </button>
         </div>
       )}

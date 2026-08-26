@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { TeamLogo } from '../hooks/useTeamLogos.jsx'
+import { Zap, ArrowRight, Bot, User } from 'lucide-react'
 
 // Surfaces teams whose "computer crowd" (average rank across published custom
 // polls) diverges most from the human consensus — the site's own dark horses.
@@ -44,8 +45,8 @@ export default function DarkHorseTracker() {
     <div style={{ maxWidth: 800, margin: '0 auto 32px', padding: '0 24px' }}>
       <div className="card" style={{ marginTop: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <h3 style={{ fontSize: 15, margin: 0 }}>🐴 Dark Horse Tracker</h3>
-          <Link to="/custom-poll/gallery" style={{ fontSize: 12, fontWeight: 600 }}>See gallery →</Link>
+          <h3 style={{ fontSize: 15, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}><Zap size={15} /> Dark Horse Tracker</h3>
+          <Link to="/custom-poll/gallery" style={{ fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}>See gallery <ArrowRight size={12} /></Link>
         </div>
         <p style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>Teams where the community's computer polls disagree most with human voters.</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -54,8 +55,8 @@ export default function DarkHorseTracker() {
               <TeamLogo name={t.team} size={20} />
               <span style={{ fontWeight: 600, flex: 1 }}>{t.team}</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>Humans #{t.human} · Computers ~#{t.crowdAvg.toFixed(1)}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: t.gap > 0 ? 'var(--ok)' : 'var(--err)' }}>
-                {t.gap > 0 ? `+${Math.round(t.gap)} 🤖` : `${Math.round(t.gap)} 🧑`}
+              <span style={{ fontSize: 11, fontWeight: 700, color: t.gap > 0 ? 'var(--ok)' : 'var(--err)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                {t.gap > 0 ? <>+{Math.round(t.gap)} <Bot size={11} /></> : <>{Math.round(t.gap)} <User size={11} /></>}
               </span>
             </div>
           ))}

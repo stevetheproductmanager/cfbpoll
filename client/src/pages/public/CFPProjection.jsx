@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
+import { Trophy, ArrowLeft } from 'lucide-react'
 
 export default function CFPProjection() {
   const [data, setData] = useState(null)
@@ -21,9 +22,9 @@ export default function CFPProjection() {
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px 24px 80px' }}>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>🏆 CFP Projection</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Trophy size={26} /> CFP Projection</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>A 12-team bracket projected off this week's Top 25 — {data.note}</p>
-        <Link to="/rankings" style={{ fontSize: 12, color: 'var(--brand2)' }}>← Back to Rankings</Link>
+        <Link to="/rankings" style={{ fontSize: 12, color: 'var(--brand2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><ArrowLeft size={12} /> Back to Rankings</Link>
       </div>
 
       <div className="card" style={{ marginTop: 0, marginBottom: 12 }}>

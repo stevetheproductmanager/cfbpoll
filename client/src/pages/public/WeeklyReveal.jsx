@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import ShareButton from '../../components/ShareButton.jsx'
+import { ArrowRight } from 'lucide-react'
 
 // A "reveal show" presentation of the current week's consensus Top 25 —
 // counts down from #25 to #1 with a staggered entrance animation, like the
@@ -89,7 +90,7 @@ export default function WeeklyReveal() {
       {revealed >= top25.length && top25.length > 0 && (
         <div style={{ textAlign: 'center', marginTop: 24, display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
           <ShareButton title={`Week ${weekInfo?.current?.week} Reveal`} text={`#1 ${top25[0]?.team} — this week's Poll Position Top 25 reveal`} />
-          <Link to="/rankings" className="btn btn-ghost" style={{ fontSize: 12, textDecoration: 'none' }}>View full breakdown →</Link>
+          <Link to="/rankings" className="btn btn-ghost" style={{ fontSize: 12, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>View full breakdown <ArrowRight size={12} /></Link>
         </div>
       )}
     </div>

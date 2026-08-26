@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { TeamLogo } from '../hooks/useTeamLogos.jsx'
+import { ArrowRight, X } from 'lucide-react'
 
 function RankHistory({ history }) {
   const pts = (history || []).filter(h => h.rank)
@@ -56,8 +57,8 @@ export default function TeamDetailModal({ name, resume, week, onClose, onTeam })
               {resume ? `${resume.conference} · ${resume.record} · Computer #${resume.rank}${resume.sosRank ? ` · SOS #${resume.sosRank}` : ''}` : 'Loading…'}
             </div>
           </div>
-          <Link to={`/team/${encodeURIComponent(name)}`} style={{ fontSize: 11, fontWeight: 600, color: 'var(--brand2)', whiteSpace: 'nowrap' }} title="Open full team page">Full page →</Link>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: 10, margin: -10, lineHeight: 1 }}>✕</button>
+          <Link to={`/team/${encodeURIComponent(name)}`} style={{ fontSize: 11, fontWeight: 600, color: 'var(--brand2)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 3 }} title="Open full team page">Full page <ArrowRight size={11} /></Link>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 10, margin: -10, lineHeight: 1, display: 'inline-flex' }}><X size={20} /></button>
         </div>
 
         <div style={{ padding: 20, overflowY: 'auto' }}>

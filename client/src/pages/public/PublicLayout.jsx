@@ -4,6 +4,7 @@ import { LogoProvider } from '../../hooks/useTeamLogos.jsx'
 import { FavoritesProvider } from '../../store/FavoritesContext.jsx'
 import { useAuth } from '../../store/AuthContext.jsx'
 import PublicHeader from '../../components/PublicHeader.jsx'
+import { Vote, ArrowRight, Goal } from 'lucide-react'
 
 function AnnouncementBanner() {
   const [banner, setBanner] = useState('')
@@ -57,8 +58,8 @@ function VoteNudgeBanner() {
       color: urgent ? 'var(--err)' : 'var(--brand2)',
       display: 'flex', gap: 10, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap',
     }}>
-      <span>🗳️ You haven't voted for Week {weekInfo.current.week} yet{urgent && hoursLeft > 0 ? ` — closes in ${Math.round(hoursLeft)}h` : ''}.</span>
-      <Link to="/ballot" style={{ color: 'inherit', textDecoration: 'underline', fontWeight: 700 }}>Submit your ballot →</Link>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Vote size={14} /> You haven't voted for Week {weekInfo.current.week} yet{urgent && hoursLeft > 0 ? ` — closes in ${Math.round(hoursLeft)}h` : ''}.</span>
+      <Link to="/ballot" style={{ color: 'inherit', textDecoration: 'underline', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>Submit your ballot <ArrowRight size={13} /></Link>
     </div>
   )
 }
@@ -66,7 +67,7 @@ function VoteNudgeBanner() {
 function MaintenanceNotice({ message }) {
   return (
     <div style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24, gap: 12 }}>
-      <div style={{ fontSize: 48 }}>🏈</div>
+      <Goal size={48} />
       <h2 style={{ margin: 0 }}>Down for Maintenance</h2>
       <p style={{ color: 'var(--text-secondary)', maxWidth: 420 }}>{message || "We're making some updates. Please check back shortly."}</p>
     </div>

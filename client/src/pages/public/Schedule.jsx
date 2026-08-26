@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import TeamScoreLine from '../../components/TeamScoreLine.jsx'
 import { CURRENT_SEASON as SEASON } from '../../lib/season.js'
+import { Tv, Calendar } from 'lucide-react'
 
 function fmtDate(iso) {
   if (!iso) return 'Date TBD'
@@ -37,7 +38,7 @@ function GameRow({ g }) {
       </div>
 
       <div style={{ width: 130, flexShrink: 0, textAlign: 'right', fontSize: 12, color: 'var(--text-secondary)' }}>
-        {g.network && <div style={{ fontWeight: 600 }}>📺 {g.network}</div>}
+        {g.network && <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}><Tv size={11} /> {g.network}</div>}
         {g.venue && <div style={{ color: 'var(--muted)' }}>{g.venue}</div>}
       </div>
     </div>
@@ -102,7 +103,7 @@ export default function Schedule() {
   return (
     <div style={{ maxWidth: 820, margin: '0 auto', padding: '24px 24px 80px' }}>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>📅 Schedule</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Calendar size={26} /> Schedule</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Every FBS matchup for the {SEASON} season, with kickoff time and TV network.</p>
       </div>
 

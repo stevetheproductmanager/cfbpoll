@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { Check, Link2 } from 'lucide-react'
 
 // Native share sheet on mobile/supporting browsers, clipboard-copy fallback
 // everywhere else. `url` defaults to the current page.
@@ -19,7 +20,7 @@ export default function ShareButton({ title = 'Poll Position', text = '', url, s
 
   return (
     <button className="btn btn-ghost" onClick={doShare} style={{ fontSize: 12, padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 6, ...style }}>
-      {copied ? '✓ Link copied' : <>🔗 Share</>}
+      {copied ? <><Check size={13} /> Link copied</> : <><Link2 size={13} /> Share</>}
     </button>
   )
 }

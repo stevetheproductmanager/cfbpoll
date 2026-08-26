@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext.jsx'
+import { Medal, Flame, Trophy, ArrowRight } from 'lucide-react'
+
+const MEDAL_COLORS = { 1: '#FFD700', 2: '#C0C0C0', 3: '#CD7F32' }
 
 function MedalIcon({ rank }) {
-  if (rank === 1) return <span style={{ fontSize: 22 }}>🥇</span>
-  if (rank === 2) return <span style={{ fontSize: 22 }}>🥈</span>
-  if (rank === 3) return <span style={{ fontSize: 22 }}>🥉</span>
+  if (rank <= 3) return <Medal size={22} style={{ color: MEDAL_COLORS[rank] }} />
   return <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--muted)', minWidth: 28, textAlign: 'center' }}>#{rank}</span>
 }
 
@@ -27,8 +28,8 @@ function computeStreak(weekDetail, allWeeks) {
 function StreakBadge({ streak }) {
   if (streak < 3) return null
   return (
-    <span title={`${streak}-week voting streak`} style={{ fontSize: 11, fontWeight: 700, color: 'var(--warn)', marginLeft: 6 }}>
-      🔥{streak}
+    <span title={`${streak}-week voting streak`} style={{ fontSize: 11, fontWeight: 700, color: 'var(--warn)', marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+      <Flame size={11} />{streak}
     </span>
   )
 }
@@ -73,7 +74,7 @@ export default function Leaderboard() {
           Voter Leaderboard
         </h1>
         <div className="card" style={{ padding: '60px 24px' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🏆</div>
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center', color: 'var(--muted)' }}><Trophy size={48} /></div>
           <h2>No voters yet</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Submit ballots and the leaderboard will populate.</p>
         </div>
@@ -189,7 +190,7 @@ export default function Leaderboard() {
                         ))}
                       </div>
                       <div style={{ marginTop: 8 }}>
-                        <Link to={`/history/${v.userId}`} style={{ fontSize: 12 }}>View full ballot history →</Link>
+                        <Link to={`/history/${v.userId}`} style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 3 }}>View full ballot history <ArrowRight size={12} /></Link>
                       </div>
                     </td></tr>
                   )}

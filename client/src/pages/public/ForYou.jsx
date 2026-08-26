@@ -4,6 +4,7 @@ import { useAuth } from '../../store/AuthContext.jsx'
 import { useFavorites } from '../../store/FavoritesContext.jsx'
 import { TeamLogo } from '../../hooks/useTeamLogos.jsx'
 import Badges, { computeBadges } from '../../components/Badges.jsx'
+import { Star, CheckCircle2, Vote, Target, Settings, Radio, ArrowRight } from 'lucide-react'
 
 const BALLOT_KEY = 'pollposition_ballot'
 
@@ -49,14 +50,14 @@ export default function ForYou() {
         <h1 style={{
           fontSize: 30, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4,
           background: 'linear-gradient(135deg, var(--brand), var(--accent))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-        }}>⭐ For You</h1>
+        }}><Star size={26} style={{ verticalAlign: -4, marginRight: 6 }} />For You</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Welcome back, {user.name}.</p>
         <Badges badges={badges} />
       </div>
 
       {/* Ballot status */}
       <div className="card" style={{ marginTop: 0, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 32 }}>{myBallotSubmitted ? '✅' : '🗳️'}</div>
+        <div style={{ color: myBallotSubmitted ? 'var(--ok)' : 'var(--muted)', display: 'flex' }}>{myBallotSubmitted ? <CheckCircle2 size={32} /> : <Vote size={32} />}</div>
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>
             {myBallotSubmitted === null ? 'Checking your ballot…' : myBallotSubmitted ? `Week ${weekInfo?.current?.week} ballot submitted` : `You haven't voted for Week ${weekInfo?.current?.week || ''} yet`}
@@ -75,7 +76,7 @@ export default function ForYou() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
         {/* Your teams */}
         <div className="card" style={{ marginTop: 0 }}>
-          <h3 style={{ marginBottom: 10 }}>★ Your Teams</h3>
+          <h3 style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}><Star size={15} /> Your Teams</h3>
           {favorites.length ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {favorites.map(team => {
@@ -103,33 +104,33 @@ export default function ForYou() {
 
         {/* Your accuracy */}
         <div className="card" style={{ marginTop: 0 }}>
-          <h3 style={{ marginBottom: 10 }}>🎯 Your Accuracy</h3>
+          <h3 style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}><Target size={15} /> Your Accuracy</h3>
           {voterStats ? (
             <>
               <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
                 <div><div style={{ fontSize: 24, fontWeight: 800, color: 'var(--brand2)' }}>{accuracyPct}%</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>vs consensus</div></div>
                 <div><div style={{ fontSize: 24, fontWeight: 800 }}>#{voterStats.rank}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>leaderboard</div></div>
               </div>
-              <Link to={`/history/${user.id}`} style={{ fontSize: 12, color: 'var(--brand2)' }}>View full history →</Link>
+              <Link to={`/history/${user.id}`} style={{ fontSize: 12, color: 'var(--brand2)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>View full history <ArrowRight size={12} /></Link>
             </>
           ) : <p style={{ fontSize: 12, color: 'var(--muted)' }}>Vote a few weeks to build your accuracy stats.</p>}
         </div>
 
         {/* Your custom polls */}
         <div className="card" style={{ marginTop: 0 }}>
-          <h3 style={{ marginBottom: 10 }}>⚙️ Your Computer Polls</h3>
+          <h3 style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}><Settings size={15} /> Your Computer Polls</h3>
           {myCustomPolls.length ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {myCustomPolls.slice(0, 4).map(p => (
                 <Link key={p._id} to={`/custom-poll/${p._id}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'inherit', textDecoration: 'none' }}>
-                  <span style={{ fontWeight: 600 }}>{p.name}{p.published && ' 📡'}</span>
+                  <span style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{p.name}{p.published && <Radio size={11} style={{ color: 'var(--brand2)' }} />}</span>
                   <span style={{ color: 'var(--muted)' }}>#1 {p.rankings?.[0]?.team || '—'}</span>
                 </Link>
               ))}
             </div>
           ) : <p style={{ fontSize: 12, color: 'var(--muted)' }}>You haven't built one yet.</p>}
-          <Link to="/custom-poll" className="btn btn-ghost" style={{ fontSize: 11, marginTop: 10, display: 'inline-block', textDecoration: 'none' }}>
-            {myCustomPolls.length ? 'Manage polls' : 'Build your first poll'} →
+          <Link to="/custom-poll" className="btn btn-ghost" style={{ fontSize: 11, marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}>
+            {myCustomPolls.length ? 'Manage polls' : 'Build your first poll'} <ArrowRight size={11} />
           </Link>
         </div>
       </div>
