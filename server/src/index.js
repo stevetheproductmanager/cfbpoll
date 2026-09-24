@@ -77,7 +77,12 @@ function addScheduleLog(msg) {
   log(`[scheduler] ${msg}`);
 }
 
+let lastScheduledStart = 0;
 async function runScheduledDownload(year = CURRENT_SEASON) {
+  // Both the in-process cron and the Heroku Scheduler trigger can fire for the
+  // same slot when the dyno happens to be awake — only run once per slot.
+  if (Date.now() - lastScheduledStart < 30 * 60 * 1000) { addScheduleLog('Skipping duplicate download trigger (one started <30 min ago)'); return; }
+  lastScheduledStart = Date.now();
   addScheduleLog(`Starting scheduled CFBD data download for ${year}...`);
   try {
     const { results, errors } = await downloadSeasonEndpoints(year);
@@ -1514,6 +1519,22 @@ app.post('/api/schedule', requireAdmin, async (req, res) => {
   await saveSchedule(config);
   applySchedule(config);
   res.json({ ok: true, config });
+});
+
+// Called hourly by Heroku Scheduler (a one-off dyno running curl). Eco web dynos
+// sleep, so the in-process node-cron can't be relied on; this request wakes the
+// dyno, and we run the download only if the saved schedule says "now".
+app.post('/api/schedule/cron-trigger', async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.get('x-cron-secret') !== secret) return res.status(401).json({ error: 'Unauthorized' });
+  const config = await loadSchedule();
+  if (!config?.enabled) return res.json({ ok: true, ran: false, reason: 'schedule disabled' });
+  const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+  const due = DAYS[now.getDay()] === String(config.day).toLowerCase() && now.getHours() === Number(config.hour);
+  if (!due) return res.json({ ok: true, ran: false, reason: 'not scheduled for this hour' });
+  res.json({ ok: true, ran: true });
+  runScheduledDownload(config.year || CURRENT_SEASON);
 });
 
 app.post('/api/schedule/run-now', requireAdmin, async (req, res) => {
