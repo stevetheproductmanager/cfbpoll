@@ -124,7 +124,7 @@ function BackfillPanel() {
               <span style={{ color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', fontSize: 11 }}>
                 {new Date(entry.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
-              <span style={{ color: /fail|error|✗/i.test(entry.message) ? 'var(--err)' : 'var(--text-secondary)' }}>{entry.message}</span>
+              <span style={{ color: isErrorLine(entry.message) ? 'var(--err)' : 'var(--text-secondary)' }}>{entry.message}</span>
             </div>
           ))}
         </div>
@@ -132,6 +132,9 @@ function BackfillPanel() {
     </div>
   )
 }
+
+// "Download complete: 16 OK, 0 errors" contains the word "errors" but isn't one.
+const isErrorLine = (msg = '') => /fail|error|✗/i.test(msg.replace(/(^|[^\d])0 errors?/gi, '$1'))
 
 export default function ScheduledDownload() {
   const toast = useToast()
@@ -204,7 +207,7 @@ export default function ScheduledDownload() {
 
       {(() => {
         const last = schedLog[schedLog.length - 1]
-        if (!last || !/fail|error/i.test(last.message)) return null
+        if (!last || !isErrorLine(last.message)) return null
         return (
           <div style={{ background: 'var(--err-muted, rgba(248,113,113,0.1))', border: '1px solid var(--err)', color: 'var(--err)', borderRadius: 8, padding: '8px 12px', fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
             <AlertTriangle size={14} /> Last run failed: {last.message}
@@ -260,7 +263,7 @@ export default function ScheduledDownload() {
                   <span style={{ color: 'var(--muted)', flexShrink: 0, fontFamily: 'monospace', fontSize: 11 }}>
                     {new Date(entry.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
-                  <span style={{ color: entry.message.includes('fail') || entry.message.includes('error') ? 'var(--err)' : 'var(--text-secondary)' }}>
+                  <span style={{ color: isErrorLine(entry.message) ? 'var(--err)' : 'var(--text-secondary)' }}>
                     {entry.message}
                   </span>
                 </div>
