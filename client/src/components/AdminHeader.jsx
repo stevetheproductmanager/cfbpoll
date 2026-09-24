@@ -4,6 +4,7 @@ import { useAuth } from '../store/AuthContext.jsx'
 import { useRankings } from '../store/RankingsContext.jsx'
 import ThemeToggle from './ThemeToggle.jsx'
 import { Goal, ArrowLeft } from 'lucide-react'
+import { CURRENT_SEASON } from '../lib/season.js'
 
 function YearPicker() {
   const { year, setYear } = useRankings()

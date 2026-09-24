@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react'
 import { rankTeams } from '../lib/rankAlgo'
 import { getManifest, getCachedManifest } from './dataState'
+import { CURRENT_SEASON } from '../lib/season.js'
 
 const RankingsContext = createContext(null)
 
@@ -44,7 +45,7 @@ function enrichTeams(ranked) {
 }
 
 export function RankingsProvider({ children }) {
-  const [year, setYear] = useState(2025)
+  const [year, setYear] = useState(CURRENT_SEASON)
   const [refreshKey, setRefreshKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)

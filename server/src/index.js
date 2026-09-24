@@ -38,7 +38,7 @@ const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 // Single source of truth for "the season we're currently running" — every
 // route below defaults to this instead of a hardcoded 2025, so rolling over
 // to the next season is one env var instead of hunting down ~50 call sites.
-const CURRENT_SEASON = Number(process.env.CURRENT_SEASON) || 2025;
+const CURRENT_SEASON = Number(process.env.CURRENT_SEASON) || 2026;
 
 // A malformed :id route param (anything that isn't a 24-char hex ObjectId)
 // makes Mongoose throw inside the async handlers below. Express 4 doesn't
