@@ -1531,7 +1531,7 @@ app.post('/api/schedule/cron-trigger', async (req, res) => {
   if (!config?.enabled) return res.json({ ok: true, ran: false, reason: 'schedule disabled' });
   const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-  const due = DAYS[now.getDay()] === String(config.day).toLowerCase() && now.getHours() === Number(config.hour);
+  const due = DAYS[now.getDay()] === String(config.day).toLowerCase() && [Number(config.hour), Number(config.hour) + 1].includes(now.getHours());
   if (!due) return res.json({ ok: true, ran: false, reason: 'not scheduled for this hour' });
   res.json({ ok: true, ran: true });
   runScheduledDownload(config.year || CURRENT_SEASON);
