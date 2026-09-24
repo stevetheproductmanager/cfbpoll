@@ -300,11 +300,18 @@ const CORE_SLUGS = ['teams', 'teams-fbs', 'games-regular', 'sp-ratings', 'polls-
 async function downloadSeasonEndpoints(year, { onEndpointDone } = {}) {
   const results = [];
   const errors = [];
+  let fbsNames = null;
   for (const ep of ENDPOINTS) {
     const candidates = ep.candidates || [ep.path];
     try {
       const out = await tryCandidates(year, candidates);
       if (out.ok) {
+        if (ep.slug === 'teams-fbs' && Array.isArray(out.data)) fbsNames = new Set(out.data.map(t => t.school));
+        // Each slug is one Mongo document (16MB cap). The full player-stats feed
+        // (all divisions) is ~20MB, and every consumer only uses FBS players.
+        if (ep.slug === 'stats-player-season' && Array.isArray(out.data) && fbsNames?.size) {
+          out.data = out.data.filter(r => fbsNames.has(r.team));
+        }
         const savedTo = await writeJson(year, ep.slug, out.data);
         const count = Array.isArray(out.data) ? out.data.length : (out.data ? 1 : 0);
         results.push({ slug: ep.slug, pathTried: out.path, savedTo, count });
