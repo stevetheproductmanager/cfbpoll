@@ -1,6 +1,5 @@
 // server/src/routes/teams.js
 import express from 'express'
-import { writeJson } from '../save.js'
 
 export default function makeTeamsRouter({ baseURL, apiKey }) {
   const router = express.Router()
@@ -216,7 +215,7 @@ export default function makeTeamsRouter({ baseURL, apiKey }) {
     }
   })
 
-  // POST /api/teams/compare  (all-time head-to-head, saved + returned)
+  // POST /api/teams/compare  (all-time head-to-head, returned live)
   router.post('/compare', async (req, res) => {
     try {
       const { team1, team2, year } = req.body || {}
@@ -258,11 +257,11 @@ export default function makeTeamsRouter({ baseURL, apiKey }) {
         })) : []
       }
 
-      // Save alongside your other data
-      const savedTo = await writeJson(Number(year), `matchup-${team1.replace(/\s+/g,'_')}-vs-${team2.replace(/\s+/g,'_')}`, norm)
+      // Rendered on demand only — not persisted, so ad-hoc lookups don't show up
+      // in the admin "downloaded data" list.
       const count = norm.games.length
 
-      res.json({ ok:true, year:Number(year), pathTried: chosen.path, savedTo, count, data: norm })
+      res.json({ ok:true, year:Number(year), pathTried: chosen.path, count, data: norm })
     } catch (e) {
       res.json({ ok:false, message:String(e?.message || e) })
     }
