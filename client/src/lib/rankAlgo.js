@@ -107,96 +107,136 @@ export function attachGames(teamsMap, index, gamesRaw) {
 
 /** ---------------- Scoring components ---------------- **/
 
-/** Results: binary win/loss with capped MOV, venue weight, FCS adjustments.
+// Final score = SCORE_SCALE × (weighted sum of per-component z-scores). The
+// scale keeps scores near their historical range (TeamCompare maps 1.0 score
+// ≈ 70 pts of spread), so 1 z-unit of overall strength ≈ 10 pts.
+const SCORE_SCALE = 0.15;
+const HFA = 2.5;              // home-field advantage in points, removed from perf
+const MARGIN_SOFT_CAP = 28;   // margin beyond this counts only 25% in perf
+const PERF_PRIOR_GAMES = 1;   // shrinks thin early-season ratings toward average
+
+/** Recency weight per game: 0.5^(weeksAgo / halfLife). `adv.recencyDecay`
+ * 0-100 (default 50 → 6-week half-life; 100 → 3 weeks; 0 → no decay). */
+function makeRecency(teamsMap, adv = {}) {
+  let latest = 1;
+  for (const t of teamsMap.values()) for (const g of t.games) latest = Math.max(latest, g.week || 1);
+  const r = adv.recencyDecay != null ? adv.recencyDecay : 50;
+  const halfLife = r > 0 ? 300 / r : Infinity;
+  return (g) => Number.isFinite(halfLife) ? Math.pow(0.5, (latest - (g.week || 1)) / halfLife) : 1;
+}
+
+/** Game points with home-field removed and blowout margins softened. */
+function adjustedPoints(g) {
+  let pf = g.for, pa = g.against;
+  if (!g.neutral) {
+    const h = g.home ? HFA / 2 : g.away ? -HFA / 2 : 0;
+    pf -= h; pa += h;
+  }
+  const m = pf - pa, am = Math.abs(m);
+  if (am > MARGIN_SOFT_CAP) {
+    const cut = Math.sign(m) * (am - MARGIN_SOFT_CAP) * 0.75 / 2;
+    pf -= cut; pa += cut;
+  }
+  return { pf, pa };
+}
+
+function computeOpponentAverages(teamsMap){
+  for (const t of teamsMap.values()) {
+    let pf=0, pa=0;
+    for (const g of t.games){ pf += (g.for||0); pa += (g.against||0); }
+    const gp = t.games.length || 1;
+    t.pf_pg = pf / gp;
+    t.pa_pg = pa / gp;
+  }
+}
+
+/** Iterative, opponent-adjusted offense/defense ratings (SRS-style) on
+ * HFA-adjusted, blowout-softened, recency-weighted points. Ratings are
+ * re-centred each pass so they can't drift, and shrunk toward 0 by
+ * PERF_PRIOR_GAMES so a 2-game sample can't produce an extreme rating.
+ * Sets t.offAdj / t.defAdj (pts vs average), t.rating (net) and t.perf. */
+function computePerformanceIndex(teamsMap, recW, loops = 15){
+  computeOpponentAverages(teamsMap);
+  const withGames = Array.from(teamsMap.values()).filter(t => t.games.length);
+  for (const t of teamsMap.values()) { t.offAdj = 0; t.defAdj = 0; t.rating = 0; t.perf = 0; }
+  if (!withGames.length) return;
+
+  const leagueAvgPF = withGames.reduce((a, t) => a + t.pf_pg, 0) / withGames.length;
+  const off = new Map(withGames.map(t => [t.name, t.pf_pg - leagueAvgPF]));
+  const def = new Map(withGames.map(t => [t.name, leagueAvgPF - t.pa_pg]));
+
+  for (let iter = 0; iter < loops; iter++) {
+    const nextOff = new Map(), nextDef = new Map();
+    let offMean = 0, defMean = 0;
+    for (const t of withGames) {
+      let offSum = 0, defSum = 0, wSum = 0;
+      for (const g of t.games) {
+        const w = recW(g);
+        const { pf, pa } = adjustedPoints(g);
+        const oppDef = def.get(g.opp) ?? 0;
+        const oppOff = off.get(g.opp) ?? 0;
+        offSum += w * (pf - (leagueAvgPF - oppDef));   // scored above what opp's defense usually allows
+        defSum += w * ((leagueAvgPF + oppOff) - pa);   // held below what opp's offense usually scores
+        wSum += w;
+      }
+      const o = offSum / (wSum + PERF_PRIOR_GAMES), d = defSum / (wSum + PERF_PRIOR_GAMES);
+      nextOff.set(t.name, o); nextDef.set(t.name, d);
+      offMean += o; defMean += d;
+    }
+    offMean /= withGames.length; defMean /= withGames.length;
+    for (const t of withGames) {
+      off.set(t.name, nextOff.get(t.name) - offMean);
+      def.set(t.name, nextDef.get(t.name) - defMean);
+    }
+  }
+
+  for (const t of withGames) {
+    t.offAdj = off.get(t.name);
+    t.defAdj = def.get(t.name);
+    t.rating = t.offAdj + t.defAdj;
+    // Soft saturation (no hard cap) so elite teams stay distinguishable.
+    t.perf = Math.tanh(t.rating / 35);
+  }
+}
+
+/** Percentile (0..1) of every team's opponent-adjusted rating, all teams. */
+function ratingPercentiles(teamsMap) {
+  const withGames = Array.from(teamsMap.values()).filter(t => t.games.length);
+  const pct = toPercentiles(withGames.map(t => t.rating), true);
+  return new Map(withGames.map((t, i) => [t.name, pct[i]]));
+}
+
+/** Results: win/loss with capped MOV, venue weight, FCS adjustments, scaled
+ * by opponent strength (rating percentile, not raw win%) and weighted toward
+ * recent games.
  * `adv` (advanced tuning): movWeight 0-100 (default 50 → 0.28 coefficient),
  * locationBonus 0-100 (default 50 → 1x scale), badLossPenalty 0-100 (default 50 → 1x scale). */
-function computeResults(team, teamsMapRef, adv = {}){
+function computeResults(team, teamsMapRef, adv, recW, oppPct){
   const movCoef = adv.movWeight != null ? 0.56 * (adv.movWeight / 100) : 0.28;
   const locScale = adv.locationBonus != null ? adv.locationBonus / 50 : 1;
   const lossScale = adv.badLossPenalty != null ? adv.badLossPenalty / 50 : 1;
-  let sum = 0, w = 0, l = 0;
+  let sum = 0, wSum = 0, w = 0, l = 0;
   for (const g of team.games) {
     const mov = capMov(g.for - g.against);
-    const win = g.for > g.against ? 1 : 0;
-    const lw = locWeight(!!g.home, !!g.away, g.neutral, !!win, locScale);
+    const win = g.for > g.against;
+    const lw = locWeight(!!g.home, !!g.away, g.neutral, win, locScale);
 
     const opp = teamsMapRef.get(g.opp);
     const { winMul, lossMul } = vsClassWeight(opp, lossScale);
     const base = win ? (1.30 * winMul) : (-1.20 * lossMul);
     const gameScore = base + (mov / 24) * movCoef;
-    sum += gameScore * lw;
+
+    const s = oppPct.get(g.opp) ?? 0.5;
+    const oppMul = win ? (0.80 + 0.40 * s) : (0.80 + 0.40 * (1 - s));
+
+    const rw = recW(g);
+    sum += gameScore * lw * oppMul * rw;
+    wSum += rw;
 
     if (win) w++; else l++;
   }
   team.w = w; team.l = l;
-  return team.games.length ? (sum / team.games.length) : 0;
-}
-
-/** Re-score results weighting each game by opponent quality (call after SOS converges). */
-function adjustResultsByOppQuality(teamsMap, adv = {}) {
-  const movCoef = adv.movWeight != null ? 0.56 * (adv.movWeight / 100) : 0.28;
-  const locScale = adv.locationBonus != null ? adv.locationBonus / 50 : 1;
-  const lossScale = adv.badLossPenalty != null ? adv.badLossPenalty / 50 : 1;
-  for (const t of teamsMap.values()) {
-    if (!t.games.length) continue;
-    let sum = 0;
-    for (const g of t.games) {
-      const mov = capMov(g.for - g.against);
-      const win = g.for > g.against;
-      const lw = locWeight(!!g.home, !!g.away, g.neutral, win, locScale);
-      const opp = teamsMap.get(g.opp);
-      const { winMul, lossMul } = vsClassWeight(opp, lossScale);
-      const base = win ? (1.30 * winMul) : (-1.20 * lossMul);
-      const gameScore = base + (mov / 24) * movCoef;
-
-      const oppWinPct = opp ? (opp.w / Math.max(1, opp.w + opp.l)) : 0.5;
-      const oppMul = win
-        ? (0.80 + 0.40 * oppWinPct)   // beating .500 = 1.0x, beating .750 = 1.10x, beating .250 = 0.90x
-        : (0.80 + 0.40 * (1 - oppWinPct)); // losing to .750 = 0.90x (less harsh), losing to .250 = 1.10x (more harsh)
-
-      sum += gameScore * lw * oppMul;
-    }
-    t.results = sum / t.games.length;
-  }
-}
-
-/** Momentum: compare recent-half performance to first-half performance.
- * `adv.recencyDecay` 0-100 (default 50 → 0.15 coefficient) controls how much
- * a trending-up/down team is rewarded/punished vs. its season-long form. */
-function computeMomentum(teamsMap, adv = {}) {
-  const momCoef = adv.recencyDecay != null ? 0.30 * (adv.recencyDecay / 100) : 0.15;
-  const momClamp = 0.06 * (momCoef / 0.15);
-  for (const t of teamsMap.values()) {
-    const gp = t.games.length;
-    if (gp < 4) { t.momentum = 0; continue; }
-    const sorted = [...t.games].sort((a, b) => (a.week || 1) - (b.week || 1));
-    const mid = Math.floor(gp / 2);
-    const score = (games) => {
-      let s = 0;
-      for (const g of games) {
-        const mov = capMov(g.for - g.against);
-        s += (g.for > g.against ? 1 : -1) + mov / 48;
-      }
-      return s / games.length;
-    };
-    const early = score(sorted.slice(0, mid));
-    const recent = score(sorted.slice(mid));
-    t.momentum = clamp((recent - early) * momCoef, -momClamp, momClamp);
-  }
-}
-
-/** Iterative SOS from opponents' results (all teams considered). */
-function iterateSOS(teamsMap, loops=5){
-  for (const t of teamsMap.values()) t.sosAdj = t.results;
-  for (let i = 0; i < loops; i++){
-    for (const t of teamsMap.values()) {
-      if (!t.games.length){ t.sos_iter = 0; continue; }
-      let opp = 0;
-      for (const g of t.games) opp += (teamsMap.get(g.opp)?.sosAdj ?? 0);
-      t.sos_iter = opp / t.games.length;
-    }
-    for (const t of teamsMap.values()) t.sosAdj = 0.9 * t.results + 0.1 * (t.sos_iter ?? 0);
-  }
+  team.results = wSum ? sum / wSum : 0;
 }
 
 /** OWP: opponents' win% excluding games against this team (proper RPI-style). */
@@ -219,110 +259,96 @@ function computeOWP(teamsMap){
   }
 }
 
-/** Interim sets (all teams) define Top10/25/50 for résumé logic. */
-function buildTopSets(teams){
-  const tmp = [...teams].sort((a,b)=> (b.results + b.sos) - (a.results + a.sos));
-  return {
-    top10: new Set(tmp.slice(0,10).map(t=>t.name)),
-    top25: new Set(tmp.slice(0,25).map(t=>t.name)),
-    top50: new Set(tmp.slice(0,50).map(t=>t.name))
-  };
+/** SOS: average opponent-adjusted rating of opponents played (already
+ * corrected for who THEY played, so an unbeaten FCS or weak-league team no
+ * longer looks like a strong opponent), blended with OWP. sosBlend (0-100,
+ * default 72) is the fraction on the rating component vs. raw OWP. */
+function computeSOS(teamsMap, adv = {}) {
+  computeOWP(teamsMap);
+  const blend = adv.sosBlend != null ? adv.sosBlend / 100 : 0.72;
+  for (const t of teamsMap.values()) {
+    if (!t.games.length) { t.sos_iter = 0; t.sos = 0; continue; }
+    let opp = 0;
+    for (const g of t.games) opp += teamsMap.get(g.opp)?.rating ?? 0;
+    t.sos_iter = (opp / t.games.length) / 50;   // ~same spread as OWP - 0.5
+    let sos = blend * t.sos_iter + (1 - blend) * ((t.owp ?? 0) - 0.5);
+    if (sos < -0.15) sos = -0.15 + 0.6 * (sos + 0.15); // mild floor for cupcake slates
+    t.sos = sos;
+  }
 }
 
-/** Quality résumé: per-game credit/debit with margin scaling and good-loss credit.
+function interp(points, x) {
+  if (x <= points[0][0]) return points[0][1];
+  for (let i = 1; i < points.length; i++) {
+    const [x1, y1] = points[i];
+    if (x <= x1) {
+      const [x0, y0] = points[i - 1];
+      return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+    }
+  }
+  return points[points.length - 1][1];
+}
+// Continuous credit/debit by opponent FBS rank (no cliffs at 10/25/50).
+const WIN_CREDIT = [[1, 0.55], [10, 0.45], [25, 0.30], [50, 0.15], [80, 0.03], [100, 0]];
+const LOSS_DEBIT = [[10, 0], [25, -0.04], [50, -0.11], [80, -0.20], [110, -0.26]];
+const NON_FBS_RANK = 200;
+
+/** Quality résumé: per-game credit/debit by opponent FBS rank, with margin
+ * scaling and good-loss credit. Non-FBS opponents never count as quality wins.
  * `adv.badLossPenalty` 0-100 (default 50 → 1x scale) dials the debit for bad losses. */
-function computeQuality(teamsMap, sets, adv = {}){
-  const { top10, top25, top50 } = sets;
+function computeQuality(teamsMap, rankOf, adv = {}){
   const lossScale = adv.badLossPenalty != null ? adv.badLossPenalty / 50 : 1;
   for (const t of teamsMap.values()) {
     let q = 0;
     for (const g of t.games) {
-      const opp = g.opp;
-      const won = g.for > g.against;
+      const r = rankOf.get(g.opp) ?? NON_FBS_RANK;
       const margin = Math.abs(g.for - g.against);
-      if (won) {
-        const marginMul = 1.0 + clamp(margin / 28, 0, 1) * 0.35;
-        if (top10.has(opp)) q += 0.50 * marginMul;
-        else if (top25.has(opp)) q += 0.32 * marginMul;
-        else if (top50.has(opp)) q += 0.16 * marginMul;
+      if (g.for > g.against) {
+        q += interp(WIN_CREDIT, r) * (1.0 + clamp(margin / 28, 0, 1) * 0.35);
       } else {
         const closeMul = margin <= 7 ? 0.65 : margin <= 14 ? 0.85 : 1.0;
-        if (top10.has(opp)) {
-          q += margin <= 7 ? 0.06 : 0;
-        } else if (top25.has(opp)) {
-          q -= 0.04 * closeMul * lossScale;
-        } else if (top50.has(opp)) {
-          q -= 0.11 * closeMul * lossScale;
-        } else {
-          q -= 0.26 * closeMul * lossScale;
-        }
+        q += interp(LOSS_DEBIT, r) * closeMul * lossScale;
+        if (margin <= 7) q += 0.06 * clamp((15 - r) / 14, 0, 1); // close loss to an elite team
       }
     }
     t.quality = safeDiv(q, Math.max(1, t.games.length));
   }
 }
 
-/** Opponent-adjusted performance using all opponents. */
-function computeOpponentAverages(teamsMap){
-  for (const t of teamsMap.values()) {
-    let pf=0, pa=0;
-    for (const g of t.games){ pf += (g.for||0); pa += (g.against||0); }
-    const gp = t.games.length || 1;
-    t.pf_pg = pf / gp;
-    t.pa_pg = pa / gp;
-  }
+function fbsRankMap(fbsTeams, key) {
+  const sorted = [...fbsTeams].sort((a, b) => b[key] - a[key]);
+  return new Map(sorted.map((t, i) => [t.name, i + 1]));
 }
-/** Iterative, opponent-adjusted offense/defense ratings (SRS-style): each
- * team's rating is solved against its opponents' CURRENT ratings rather than
- * their raw season average, the same fixed-point approach `iterateSOS` above
- * uses — so a big game against a team that turns out to be bad gets corrected
- * down over the course of the iteration, and vice versa. Replaces a one-pass
- * version that compared a team's games only to opponents' unadjusted PF/PA
- * averages (which themselves hadn't been corrected for opponent strength). */
-function computePerformanceIndex(teamsMap, loops = 8){
-  computeOpponentAverages(teamsMap);
-  const withGames = Array.from(teamsMap.values()).filter(t => t.games.length);
-  if (!withGames.length) { for (const t of teamsMap.values()) t.perf = 0; return; }
 
-  const leagueAvgPF = withGames.reduce((a, t) => a + t.pf_pg, 0) / withGames.length;
-  const offRating = new Map(withGames.map(t => [t.name, t.pf_pg - leagueAvgPF]));
-  const defRating = new Map(withGames.map(t => [t.name, leagueAvgPF - t.pa_pg]));
-
-  for (let iter = 0; iter < loops; iter++) {
-    const nextOff = new Map(), nextDef = new Map();
-    for (const t of withGames) {
-      let offSum = 0, defSum = 0;
-      for (const g of t.games) {
-        const opp = teamsMap.get(g.opp);
-        const hasOpp = opp && opp.games.length;
-        const oppDef = hasOpp ? (defRating.get(opp.name) ?? 0) : 0;
-        const oppOff = hasOpp ? (offRating.get(opp.name) ?? 0) : 0;
-        offSum += g.for - (leagueAvgPF - oppDef);       // points scored above what opp's defense usually allows
-        defSum += (leagueAvgPF + oppOff) - g.against;    // points held below what opp's offense usually scores
-      }
-      nextOff.set(t.name, offSum / t.games.length);
-      nextDef.set(t.name, defSum / t.games.length);
-    }
-    for (const t of withGames) { offRating.set(t.name, nextOff.get(t.name)); defRating.set(t.name, nextDef.get(t.name)); }
-  }
-
+/** Momentum: last few games' opponent-adjusted performance vs. the team's
+ * own season residual. `adv.recencyDecay` 0-100 (default 50 → 1x) scales it. */
+function computeMomentum(teamsMap, adv = {}) {
+  const coef = adv.recencyDecay != null ? adv.recencyDecay / 50 : 1;
   for (const t of teamsMap.values()) {
-    if (!t.games.length) { t.perf = 0; continue; }
-    const rel = (offRating.get(t.name) + defRating.get(t.name)) / 28;
-    t.perf = clamp(rel, -1.2, 1.2);
+    const gp = t.games.length;
+    if (gp < 4) { t.momentum = 0; continue; }
+    const sorted = [...t.games].sort((a, b) => (a.week || 1) - (b.week || 1));
+    const resid = sorted.map(g => {
+      const { pf, pa } = adjustedPoints(g);
+      return (pf - pa) - (t.rating - (teamsMap.get(g.opp)?.rating ?? 0));
+    });
+    const n = Math.min(3, Math.floor(gp / 2));
+    const recent = resid.slice(-n).reduce((a, b) => a + b, 0) / n;
+    const season = resid.reduce((a, b) => a + b, 0) / gp;
+    t.momentum = clamp((recent - season) / 28, -1, 1) * coef;
   }
 }
 
-/** H2H smoothing: nudge scales inversely with score gap — big effect when close, fades when far. */
+/** H2H smoothing: nudge scales inversely with score gap — big effect when
+ * close, fades when far. Computed from a snapshot so order doesn't matter. */
 function applyHeadToHeadNudge(sorted, teamsMap){
   const hasBeaten = new Map();
   for (const t of teamsMap.values()) {
     const wins = new Set();
-    for (const g of t.games) {
-      if (g.for > g.against) wins.add(g.opp);
-    }
+    for (const g of t.games) if (g.for > g.against) wins.add(g.opp);
     hasBeaten.set(t.name, wins);
   }
+  const bump = new Map();
   for (let i = 0; i < sorted.length; i++){
     const higher = sorted[i];
     for (let j = i + 1; j < Math.min(sorted.length, i + 8); j++){
@@ -330,18 +356,16 @@ function applyHeadToHeadNudge(sorted, teamsMap){
       const lowerBeatHigher = hasBeaten.get(lower.name)?.has(higher.name);
       const higherBeatLower = hasBeaten.get(higher.name)?.has(lower.name);
       if (lowerBeatHigher && !higherBeatLower) {
-        const gap = higher.score - lower.score;
-        const nudge = gap < 0.005 ? 0.008
-                    : gap < 0.02  ? 0.006
-                    : gap < 0.05  ? 0.004
-                    :               0.002;
-        lower.score += nudge;
+        const gz = (higher.score - lower.score) / SCORE_SCALE;
+        const nudge = gz < 0.025 ? 0.04 : gz < 0.1 ? 0.03 : gz < 0.25 ? 0.02 : 0.01;
+        bump.set(lower.name, (bump.get(lower.name) || 0) + nudge * SCORE_SCALE);
       }
     }
   }
+  for (const t of sorted) t.score += bump.get(t.name) || 0;
 }
 
-/** SP+ prior (optional, fades quickly). Uses team index aliases for robust matching. */
+/** SP+ prior (optional, fades quickly) as a clamped z-score. */
 function indexSP(spRaw = [], teamIndex = null) {
   const map = new Map();
   for (const r of spRaw) {
@@ -359,8 +383,7 @@ function indexSP(spRaw = [], teamIndex = null) {
     if (!canonicalName) return null;
     const raw = map.get(canonicalName) ?? null;
     if (raw == null) return null;
-    const z = (raw - mean) / std;
-    return Math.max(-2.5, Math.min(2.5, z)) / 10;
+    return Math.max(-2.5, Math.min(2.5, (raw - mean) / std));
   };
   return { get };
 }
@@ -378,8 +401,18 @@ function toPercentiles(arr, higherIsBetter=true){
   return result;
 }
 
-/** Default component weights for the built-in computer poll (must sum to 1). */
-export const DEFAULT_WEIGHTS = { efficiency: 0.38, results: 0.25, sos: 0.15, quality: 0.12, momentum: 0.10 };
+/** z-score function fitted on `teams` (0 for a constant component). */
+function zScorer(teams, get) {
+  const vals = teams.map(get);
+  const n = vals.length || 1;
+  const mean = vals.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+  return (x) => sd > 1e-9 ? (x - mean) / sd : 0;
+}
+
+/** Default component weights for the built-in computer poll (must sum to 1).
+ * Components are z-scored before weighting, so these are the real mix. */
+export const DEFAULT_WEIGHTS = { efficiency: 0.42, results: 0.25, sos: 0.10, quality: 0.15, momentum: 0.08 };
 
 /** Default "advanced" tuning knobs — 0-100 sliders. Every default reproduces
  * the official site algorithm's fixed constants exactly; a custom poll can
@@ -402,7 +435,7 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
       w: 0, l: 0,
       results: 0, sos_iter: 0, owp: 0, sos: 0,
       quality: 0, momentum: 0,
-      perf: 0,
+      perf: 0, rating: 0, offAdj: 0, defAdj: 0,
       pf_pg: 0, pa_pg: 0,
       score: 0
     });
@@ -411,67 +444,53 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
   // Attach games: uses all teams; FCS opponents resolve properly.
   attachGames(teamsMap, { byId, byName }, gamesRaw);
 
+  const allTeams = Array.from(teamsMap.values());
+  const played = allTeams.filter(t => t.games.length);
+
   // If no games, return FBS alphabetically (legacy fallback)
-  const totalGames = Array.from(teamsMap.values()).reduce((a, t) => a + t.games.length, 0);
-  if (totalGames === 0) {
-    const flat = Array.from(teamsMap.values()).filter(t => (t.classification || '').toLowerCase() === 'fbs');
+  if (!played.length) {
+    const flat = allTeams.filter(t => (t.classification || '').toLowerCase() === 'fbs');
     flat.sort((a,b)=> a.name.localeCompare(b.name));
     flat.forEach((t, i)=> { t.rank = i+1; t.score = -0.085; });
     return flat;
   }
 
-  const gamesMean = Array.from(teamsMap.values())
-    .reduce((a,x)=> a + x.games.length, 0) / Math.max(1, teamsMap.size);
+  const gamesMean = played.reduce((a, x) => a + x.games.length, 0) / played.length;
   const seasonProgress = clamp((gamesMean - 2) / 8, 0, 1);
-  
-  // Results & SOS
-  for (const t of teamsMap.values()) t.results = computeResults(t, teamsMap, adv);
-  iterateSOS(teamsMap, 5);
-  adjustResultsByOppQuality(teamsMap, adv);
-  computeOWP(teamsMap);
+  const recW = makeRecency(teamsMap, adv);
 
-  // Combine SOS parts; mild floor for early cupcake slates. sosBlend (0-100,
-  // default 72) is the fraction of weight on the iterative (played-schedule)
-  // component vs. raw opponents'-win% (OWP) — higher = more "who you played",
-  // lower = more "how good their record looks."
-  const sosBlendFrac = adv.sosBlend != null ? adv.sosBlend / 100 : 0.72;
-  for (const t of teamsMap.values()) {
-    const iter = t.sos_iter ?? 0;
-    const owpC = (t.owp ?? 0) - 0.5;
-    let sos = sosBlendFrac*iter + (1 - sosBlendFrac)*owpC;
-    if (sos < -0.15) sos = -0.15 + 0.6*(sos + 0.15);
-    t.sos = sos * (1 + 0.06 * seasonProgress);
-  }
-    {
-    const allTeams = Array.from(teamsMap.values());
+  // Opponent-adjusted ratings first — everything else leans on them.
+  computePerformanceIndex(teamsMap, recW);
+  const oppPct = ratingPercentiles(teamsMap);
+
+  for (const t of allTeams) computeResults(t, teamsMap, adv, recW, oppPct);
+  computeSOS(teamsMap, adv);
+  computeMomentum(teamsMap, adv);
+
+  const fbsTeams = allTeams.filter(t => (t.classification || '').toLowerCase() === 'fbs');
+  const fbsPlayed = fbsTeams.filter(t => t.games.length);
+  const refTeams = fbsPlayed.length ? fbsPlayed : played;
+
+  {
     const sosSortedAll = [...allTeams].sort((a, b) => b.sos - a.sos); // higher = tougher
     sosSortedAll.forEach((t, i) => { t.sosRankAll = i + 1; });
   }
 
-  // Quality on all opponents
-  const sets = buildTopSets(Array.from(teamsMap.values()));
-  computeQuality(teamsMap, sets, adv);
-
-  // Opponent-adjusted performance
-  computePerformanceIndex(teamsMap);
-
-  // Momentum: recent-half vs first-half performance trend
-  computeMomentum(teamsMap, adv);
-
-  // Efficiency percentiles — FBS only so the distribution isn't skewed by FCS teams
-  const fbsTeams = Array.from(teamsMap.values()).filter(t => (t.classification || '').toLowerCase() === 'fbs');
-  const fbsPF = fbsTeams.map(t => t.pf_pg || 0);
-  const fbsPA = fbsTeams.map(t => t.pa_pg || 0);
-  const pfPct = toPercentiles(fbsPF, true);
-  const paPct = toPercentiles(fbsPA, false);
-  fbsTeams.forEach((t, i) => {
-    t.offPct = pfPct[i];
-    t.defPct = paPct[i];
-  });
-  // FCS teams get neutral percentiles
-  for (const t of teamsMap.values()) {
+  // Raw (unadjusted) PF/PA percentiles — FBS only so FCS doesn't skew them
+  const pfPct = toPercentiles(fbsTeams.map(t => t.pf_pg || 0), true);
+  const paPct = toPercentiles(fbsTeams.map(t => t.pa_pg || 0), false);
+  fbsTeams.forEach((t, i) => { t.offPct = pfPct[i]; t.defPct = paPct[i]; });
+  for (const t of allTeams) {
     if (t.offPct == null) t.offPct = 0.5;
     if (t.defPct == null) t.defPct = 0.5;
+  }
+
+  // Efficiency: mostly the opponent-adjusted rating, a little raw PF/PA;
+  // the adjusted share grows as the season gives it more games.
+  const perfBlend = 0.55 + 0.25 * seasonProgress;
+  for (const t of allTeams) {
+    const rawEff = clamp(0.55 * t.offPct + 0.45 * t.defPct, 0, 1);
+    t.efficiency = (1 - perfBlend) * rawEff + perfBlend * (t.perf * 0.5 + 0.5);
   }
 
   // Conference strength: each team's conference average SOS, percentile-ranked
@@ -487,10 +506,16 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
     for (const [conf, arr] of byConf.entries()) {
       confAvg.set(conf, arr.reduce((a, t) => a + t.sos, 0) / (arr.length || 1));
     }
-    const confRaws = fbsTeams.map(t => confAvg.get(t.conference) || 0);
-    const confPctArr = toPercentiles(confRaws, true);
+    const confPctArr = toPercentiles(fbsTeams.map(t => confAvg.get(t.conference) || 0), true);
     fbsTeams.forEach((t, i) => { t.confPct = confPctArr[i]; });
-    for (const t of teamsMap.values()) { if (t.confPct == null) t.confPct = 0.5; }
+    for (const t of allTeams) { if (t.confPct == null) t.confPct = 0.5; }
+  }
+
+  // SOS percentile among FBS — scales the unbeaten bonus
+  const sosPctMap = new Map();
+  {
+    const p = toPercentiles(refTeams.map(t => t.sos), true);
+    refTeams.forEach((t, i) => sosPctMap.set(t.name, p[i]));
   }
 
   const prior = indexSP(spRaw, { byName });
@@ -507,80 +532,51 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
   const wMOM = (wRaw.momentum || 0) / wSum;
   const wCON = (wRaw.conference || 0) / wSum;
 
-  // First pass scoring for quality second-pass calibration
-  const scoreTeam = (t) => {
-    const gp = t.games.length;
+  // Every component is z-scored across FBS teams so the weights mean what
+  // they say regardless of each component's native scale.
+  const zEFF = zScorer(refTeams, t => t.efficiency);
+  const zRES = zScorer(refTeams, t => t.results);
+  const zSOS = zScorer(refTeams, t => t.sos);
+  const zMOM = zScorer(refTeams, t => t.momentum);
+  const zCON = zScorer(refTeams, t => t.confPct);
 
-    const results = t.results;
-    const sos     = t.sos;
-    const quality = t.quality;
-    const perf    = t.perf;
-    const mom     = t.momentum || 0;
+  const scoreAll = () => {
+    const zQLT = zScorer(refTeams, t => t.quality);
+    for (const t of allTeams) {
+      const gp = t.games.length;
+      let core =
+          wEFF * zEFF(t.efficiency) +
+          wRES * zRES(t.results) +
+          wSOS * zSOS(t.sos) +
+          wQLT * zQLT(t.quality) +
+          wMOM * zMOM(t.momentum) +
+          wCON * zCON(t.confPct);
 
-    const offPct = t.offPct;
-    const defPct = t.defPct;
-    const effCore = 0.55 * offPct + 0.45 * defPct;
-    const rawEfficiency = clamp(effCore, 0, 1);
+      // Small unbeaten bonus, scaled by schedule strength — results and
+      // quality already reward the wins, so this is only a tiebreak-sized tilt.
+      if (t.l === 0 && gp >= 3) {
+        core += 0.12 * (1 - Math.exp(-gp / 5)) * (sosPctMap.get(t.name) ?? 0.5);
+      }
 
-    // Majority weight goes to the opponent-adjusted rating (perf) rather than
-    // the raw, unadjusted PF/PA percentile — otherwise a team padding stats
-    // against a weak schedule gets full credit in the largest-weighted
-    // component (efficiency). Grows further as the season gives the
-    // iterative solve more games to converge on.
-    const perfBlend = 0.55 + 0.25 * seasonProgress;
-    const efficiency = (1 - perfBlend) * rawEfficiency + perfBlend * clamp(perf * 0.5 + 0.5, 0, 1);
-
-    let core =
-        wEFF * efficiency +
-        wRES * results +
-        wSOS * sos +
-        wQLT * quality +
-        wMOM * clamp(mom + 0.5, 0, 1) +
-        wCON * (t.confPct ?? 0.5);
-
-    if (t.l === 0 && gp >= 3) {
-      const scale = (1 - Math.exp(-gp / 5));
-      const effTilt = 0.7 + 0.3 * efficiency;
-      const sosTilt = 0.6 + 0.4 * clamp(sos + 0.5, 0, 1);
-      const undefeated = 0.048 * scale * effTilt * sosTilt;
-      core += Math.min(0.06, undefeated);
+      const sp = prior.get(t.name) ?? 0;
+      const priorW = Math.max(0, Math.min(0.08, 0.12 - 0.02 * gp));
+      t.score = SCORE_SCALE * ((1 - priorW) * core + priorW * sp);
     }
-
-    if (t.l >= 1 && gp <= 6) {
-      const factor = (7 - gp) / 7;
-      core -= 0.006 * t.l * factor;
-    }
-
-    const sp = prior.get(t.name) ?? 0;
-    const priorW = Math.max(0, Math.min(0.08, 0.12 - 0.02 * gp));
-
-    return (1 - priorW) * core + priorW * sp;
   };
 
-  // First pass: score all teams
-  for (const t of teamsMap.values()) t.score = scoreTeam(t);
+  // Pass 1: quality vs. opponents ranked by adjusted rating; score.
+  computeQuality(teamsMap, fbsRankMap(fbsTeams, 'rating'), adv);
+  scoreAll();
+  // Pass 2: quality vs. opponents ranked by pass-1 FBS score; rescore.
+  computeQuality(teamsMap, fbsRankMap(fbsTeams, 'score'), adv);
+  scoreAll();
 
-  // Second pass: rebuild top sets from first-pass scores, recompute quality, rescore
-  const allByScore = [...teamsMap.values()].sort((a, b) => b.score - a.score);
-  const sets2 = {
-    top10: new Set(allByScore.slice(0, 10).map(t => t.name)),
-    top25: new Set(allByScore.slice(0, 25).map(t => t.name)),
-    top50: new Set(allByScore.slice(0, 50).map(t => t.name)),
-  };
-  computeQuality(teamsMap, sets2, adv);
-  for (const t of teamsMap.values()) t.score = scoreTeam(t);
-
-
-  // Sort all for consistency, apply tiny H2H smoothing, resort
-  let rankedAll = Array.from(teamsMap.values());
-  rankedAll.sort((a,b)=> b.score - a.score);
-  applyHeadToHeadNudge(rankedAll, teamsMap);
-  rankedAll.sort((a,b)=> b.score - a.score);
-
-  // Final output = FBS only
-  const rankedFBS = rankedAll.filter(t => (t.classification || '').toLowerCase() === 'fbs');
+  // Final output = FBS only, with H2H smoothing
+  const rankedFBS = [...fbsTeams].sort((a, b) => b.score - a.score);
+  applyHeadToHeadNudge(rankedFBS, teamsMap);
+  rankedFBS.sort((a, b) => b.score - a.score);
   rankedFBS.forEach((t, i)=> t.rank = i+1);
-    {
+  {
     const sosSortedFBS = [...rankedFBS].sort((a, b) => b.sos - a.sos); // higher = tougher
     const nameToFbsSosRank = new Map(sosSortedFBS.map((t, i) => [t.name, i + 1]));
     rankedFBS.forEach(t => { t.sosRank = nameToFbsSosRank.get(t.name) || null; });

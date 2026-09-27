@@ -10,11 +10,11 @@ const customPollSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 60 },
   season: { type: Number, required: true },
   weights: {
-    efficiency: { type: Number, default: 0.38 },
+    efficiency: { type: Number, default: 0.42 },
     results: { type: Number, default: 0.25 },
-    sos: { type: Number, default: 0.15 },
-    quality: { type: Number, default: 0.12 },
-    momentum: { type: Number, default: 0.10 },
+    sos: { type: Number, default: 0.10 },
+    quality: { type: Number, default: 0.15 },
+    momentum: { type: Number, default: 0.08 },
     conference: { type: Number, default: 0 },
   },
   // Advanced tuning knobs (0-100 sliders); defaults reproduce the official

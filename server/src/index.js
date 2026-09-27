@@ -1575,14 +1575,7 @@ async function computeWeeklyRankings(year) {
     const filtered = gamesRaw.filter(g => weekKey(g) <= wk);
     if (!filtered.length) { weeks[wk] = []; continue; }
 
-    let ranked = rankTeams({ teamsRaw, gamesRaw: filtered, spRaw });
-    for (const t of ranked) {
-      const gp = (t.games || []).length;
-      if (gp >= 3 && t.l === 0) t.score += 0.01;
-      if (t.l >= 2 && gp <= 5) t.score -= 0.01;
-    }
-    ranked.sort((a, b) => b.score - a.score);
-    ranked.forEach((t, i) => (t.rank = i + 1));
+    const ranked = rankTeams({ teamsRaw, gamesRaw: filtered, spRaw });
 
     weeks[wk] = ranked.filter(t => t.rank <= 30).map(t => ({
       name: t.name, rank: t.rank, score: +t.score.toFixed(4),

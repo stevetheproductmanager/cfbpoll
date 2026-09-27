@@ -22,13 +22,9 @@ function enrichTeams(ranked){
     t.pf = pf; t.pa = pa;
     t.top10Wins = t10; t.top25Wins = t25; t.top50Wins = t50;
   }
-  // Off/Def rank (off = PF/G high better, def = PA/G low better)
-  const usage = ranked.map(t => {
-    const gp = (t.games || []).length || 1;
-    return { name: t.name, off: (t.pf||0)/gp, def: (t.pa||0)/gp };
-  });
-  const offPos = new Map([...usage].sort((a,b)=>b.off-a.off).map((t,i)=>[t.name, i+1]));
-  const defPos = new Map([...usage].sort((a,b)=>a.def-b.def).map((t,i)=>[t.name, i+1]));
+  // Off/Def rank from opponent-adjusted ratings (higher = better for both)
+  const offPos = new Map([...ranked].sort((a,b)=>(b.offAdj||0)-(a.offAdj||0)).map((t,i)=>[t.name, i+1]));
+  const defPos = new Map([...ranked].sort((a,b)=>(b.defAdj||0)-(a.defAdj||0)).map((t,i)=>[t.name, i+1]));
   for (const t of ranked) {
     t.offRank = offPos.get(t.name);
     t.defRank = defPos.get(t.name);
@@ -55,15 +51,6 @@ export async function buildRankingsForYear(year){
 
   // Rank
   let ranked = rankTeams({ teamsRaw: teams, gamesRaw: games, spRaw: sp });
-
-  // Tiny UI nudges (mirror your Rankings page)
-  for (const t of ranked) {
-    const gp = (t.games || []).length;
-    if (gp >= 3 && t.l === 0) t.score += 0.01;
-    if (t.l >= 2 && gp <= 5) t.score -= 0.01;
-  }
-  ranked.sort((a,b)=> b.score - a.score);
-  ranked.forEach((t,i)=> (t.rank = i+1));
   ranked = enrichTeams(ranked);
 
   // Attach logos from teams file

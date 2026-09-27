@@ -11,7 +11,7 @@ import {
   SlidersHorizontal, BarChart3, RotateCw, Pause, Radio, ArrowLeftRight, Save, Image, Trophy,
 } from 'lucide-react'
 
-const DEFAULT_WEIGHTS = { efficiency: 38, results: 25, sos: 15, quality: 12, momentum: 10, conference: 0 }
+const DEFAULT_WEIGHTS = { efficiency: 42, results: 25, sos: 10, quality: 15, momentum: 8, conference: 0 }
 const DEFAULT_ADVANCED = { ...ALGO_DEFAULT_ADVANCED }
 
 const METRICS = [

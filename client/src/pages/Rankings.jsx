@@ -196,7 +196,7 @@ function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
               <h3 style={{ margin: '8px 0 6px' }}>How this score is built</h3>
               <Bars items={bars} />
               <div className="small" style={{ marginTop: 6 }}>
-                Weights: EFF 38%, RES 25%, SOS 15%, QLT 12%, MOM 10%. Undefeated bonus (SOS-scaled) and head-to-head nudge applied.
+                Weights: EFF 42%, RES 25%, SOS 10%, QLT 15%, MOM 8% (components z-scored, recent games weighted more). Undefeated bonus (SOS-scaled) and head-to-head nudge applied.
               </div>
             </div>
 
