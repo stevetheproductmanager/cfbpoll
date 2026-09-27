@@ -272,22 +272,44 @@ function computeOpponentAverages(teamsMap){
     t.pa_pg = pa / gp;
   }
 }
-function computePerformanceIndex(teamsMap){
+/** Iterative, opponent-adjusted offense/defense ratings (SRS-style): each
+ * team's rating is solved against its opponents' CURRENT ratings rather than
+ * their raw season average, the same fixed-point approach `iterateSOS` above
+ * uses — so a big game against a team that turns out to be bad gets corrected
+ * down over the course of the iteration, and vice versa. Replaces a one-pass
+ * version that compared a team's games only to opponents' unadjusted PF/PA
+ * averages (which themselves hadn't been corrected for opponent strength). */
+function computePerformanceIndex(teamsMap, loops = 8){
   computeOpponentAverages(teamsMap);
-  for (const t of teamsMap.values()){
-    let agg = 0;
-    for (const g of t.games){
-      const opp = teamsMap.get(g.opp);
-      const oppPA = opp?.pa_pg ?? null;  // opp's avg points allowed
-      const oppPF = opp?.pf_pg ?? null;  // opp's avg points scored
-      if (oppPA == null || oppPF == null) continue;
+  const withGames = Array.from(teamsMap.values()).filter(t => t.games.length);
+  if (!withGames.length) { for (const t of teamsMap.values()) t.perf = 0; return; }
 
-      const offRel = (g.for - oppPA) / 28;  // ~ -1..+1
-      const defRel = (oppPF - g.against) / 28;
-      const rel = Math.max(-1.2, Math.min(1.2, offRel + defRel));
-      agg += rel;
+  const leagueAvgPF = withGames.reduce((a, t) => a + t.pf_pg, 0) / withGames.length;
+  const offRating = new Map(withGames.map(t => [t.name, t.pf_pg - leagueAvgPF]));
+  const defRating = new Map(withGames.map(t => [t.name, leagueAvgPF - t.pa_pg]));
+
+  for (let iter = 0; iter < loops; iter++) {
+    const nextOff = new Map(), nextDef = new Map();
+    for (const t of withGames) {
+      let offSum = 0, defSum = 0;
+      for (const g of t.games) {
+        const opp = teamsMap.get(g.opp);
+        const hasOpp = opp && opp.games.length;
+        const oppDef = hasOpp ? (defRating.get(opp.name) ?? 0) : 0;
+        const oppOff = hasOpp ? (offRating.get(opp.name) ?? 0) : 0;
+        offSum += g.for - (leagueAvgPF - oppDef);       // points scored above what opp's defense usually allows
+        defSum += (leagueAvgPF + oppOff) - g.against;    // points held below what opp's offense usually scores
+      }
+      nextOff.set(t.name, offSum / t.games.length);
+      nextDef.set(t.name, defSum / t.games.length);
     }
-    t.perf = safeDiv(agg, (t.games.length || 1));
+    for (const t of withGames) { offRating.set(t.name, nextOff.get(t.name)); defRating.set(t.name, nextDef.get(t.name)); }
+  }
+
+  for (const t of teamsMap.values()) {
+    if (!t.games.length) { t.perf = 0; continue; }
+    const rel = (offRating.get(t.name) + defRating.get(t.name)) / 28;
+    t.perf = clamp(rel, -1.2, 1.2);
   }
 }
 
@@ -500,7 +522,12 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
     const effCore = 0.55 * offPct + 0.45 * defPct;
     const rawEfficiency = clamp(effCore, 0, 1);
 
-    const perfBlend = 0.25 + 0.20 * seasonProgress;
+    // Majority weight goes to the opponent-adjusted rating (perf) rather than
+    // the raw, unadjusted PF/PA percentile — otherwise a team padding stats
+    // against a weak schedule gets full credit in the largest-weighted
+    // component (efficiency). Grows further as the season gives the
+    // iterative solve more games to converge on.
+    const perfBlend = 0.55 + 0.25 * seasonProgress;
     const efficiency = (1 - perfBlend) * rawEfficiency + perfBlend * clamp(perf * 0.5 + 0.5, 0, 1);
 
     let core =
