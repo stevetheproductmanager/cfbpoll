@@ -241,7 +241,7 @@ export default function Rankings(){
     if (!rows.length) return
     const payload = {
       poll_type: 'computer',
-      overall_rationale: 'This ranking formula measures overall team strength using results, schedule difficulty, quality of wins, and recency. It adjusts for game location, caps margin of victory, and gives bonus credit for beating top-ranked opponents. The final score ranks FBS teams by rewarding recent, high-quality performances against strong competition. Early in the season will show some odd rankings but will normalize as the season progresses.',
+      overall_rationale: 'This ranking measures how good each team is right now. Its biggest input is opponent-adjusted scoring: how many points a team scores and allows compared with what its opponents usually give up and score. That is combined with results, strength of schedule, quality of wins and losses, and recent form. It adjusts for home field, limits the effect of blowouts, gives more credit for beating highly ranked opponents, and penalizes bad losses. Recent games count more than early ones. Early-season rankings lean partly on preseason ratings and can look odd until more games are played.',
       entries: rows.slice(0, 25).map(t => ({
         rank: t.rank,
         team_handle: teamHandle(t.name),
