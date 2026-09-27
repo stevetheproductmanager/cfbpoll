@@ -241,7 +241,7 @@ export default function Rankings(){
     if (!rows.length) return
     const payload = {
       poll_type: 'computer',
-      overall_rationale: 'Poll Position computer ranking — results, strength of schedule, quality wins, efficiency, and momentum. See /methodology for details.',
+      overall_rationale: 'This ranking formula measures overall team strength using results, schedule difficulty, quality of wins, and recency. It adjusts for game location, caps margin of victory, and gives bonus credit for beating top-ranked opponents. The final score ranks FBS teams by rewarding recent, high-quality performances against strong competition. Early in the season will show some odd rankings but will normalize as the season progresses.',
       entries: rows.map(t => ({
         rank: t.rank,
         team_handle: teamHandle(t.name),
