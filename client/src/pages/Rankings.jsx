@@ -242,7 +242,7 @@ export default function Rankings(){
     const payload = {
       poll_type: 'computer',
       overall_rationale: 'This ranking formula measures overall team strength using results, schedule difficulty, quality of wins, and recency. It adjusts for game location, caps margin of victory, and gives bonus credit for beating top-ranked opponents. The final score ranks FBS teams by rewarding recent, high-quality performances against strong competition. Early in the season will show some odd rankings but will normalize as the season progresses.',
-      entries: rows.map(t => ({
+      entries: rows.slice(0, 25).map(t => ({
         rank: t.rank,
         team_handle: teamHandle(t.name),
         rationale: rowPayload(t),
@@ -257,7 +257,7 @@ export default function Rankings(){
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
-    toast.success(`Exported ${rows.length} teams`)
+    toast.success(`Exported ${payload.entries.length} teams`)
   }, [rows, year, toast])
 
   const current = rows[idx]
