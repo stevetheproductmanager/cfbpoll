@@ -5,7 +5,9 @@ import { confColor } from '../lib/conferenceUtils.js'
 import ConfBadge from '../components/ConfBadge.jsx'
 import { useTheme } from '../theme/ThemeProvider.jsx'
 import TeamLogo from '../components/TeamLogo.jsx'
-import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, X, Download } from 'lucide-react'
+import { teamHandle } from '../lib/teamHandles.js'
+import { useToast } from '../store/ToastContext.jsx'
 
 const fmt = (n, d=3) => (typeof n === 'number' ? n : 0).toFixed(d)
 const fmt0 = (n) => (typeof n === 'number' ? Math.round(n) : 0)
@@ -218,12 +220,45 @@ function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
   )
 }
 
+// Same summary line the row's copy-to-clipboard button copies — reused as the
+// export's per-team "rationale" so both stay in sync automatically.
+function rowPayload(t) {
+  return `${t.rank}. ${t.name} — Score: ${fmt(t.score,3)} | ` +
+    `Results: ${fmt(t.results,3)}, SOS Rank: #${fmt(t.sosRank,0)}, Quality: ${fmt(t.quality,3)}, Recency: ${fmt(t.rec||0,3)} | ` +
+    `T10W: ${t.top10Wins||0}, T25W: ${t.top25Wins||0}, T50W: ${t.top50Wins||0}, ` +
+    `Off Rk: #${t.offRank||'—'}, Def Rk: #${t.defRank||'—'}`
+}
+
 export default function Rankings(){
   const { theme } = useTheme()
   const { rankings: rows, loading, error, rankMap, teamMap, year } = useRankings()
+  const toast = useToast()
 
   const [open, setOpen] = useState(false)
   const [idx, setIdx] = useState(0)
+
+  const handleExport = useCallback(() => {
+    if (!rows.length) return
+    const payload = {
+      poll_type: 'computer',
+      overall_rationale: 'Poll Position computer ranking — results, strength of schedule, quality wins, efficiency, and momentum. See /methodology for details.',
+      entries: rows.map(t => ({
+        rank: t.rank,
+        team_handle: teamHandle(t.name),
+        rationale: rowPayload(t),
+      })),
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `poll-position-overall-${year}.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    toast.success(`Exported ${rows.length} teams`)
+  }, [rows, year, toast])
 
   const current = rows[idx]
   const openAt = useCallback((i) => { setIdx(i); setOpen(true) }, [])
@@ -238,7 +273,19 @@ export default function Rankings(){
 
   return (
     <div className="card">
-      <h2>Rankings</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <h2 style={{ marginBottom: 0 }}>Rankings</h2>
+        {!loading && !error && (
+          <button
+            className="btn btn-ghost"
+            onClick={handleExport}
+            title="Export JSON"
+            style={{ padding: 8, margin: -8, display: 'inline-flex', alignItems: 'center' }}
+          >
+            <Download size={16} />
+          </button>
+        )}
+      </div>
 
       {error && <div className="progress"><span className="badge err">Error</span> {error}</div>}
       {note && <div className="progress"><span className="badge warn">Note</span> {note}</div>}
@@ -271,11 +318,7 @@ export default function Rankings(){
             </thead>
             <tbody>
               {rows.map((t, i) => {
-                const payload =
-                  `${t.rank}. ${t.name} — Score: ${fmt(t.score,3)} | ` +
-                  `Results: ${fmt(t.results,3)}, SOS Rank: #${fmt(t.sosRank,0)}, Quality: ${fmt(t.quality,3)}, Recency: ${fmt(t.rec||0,3)} | ` +
-                  `T10W: ${t.top10Wins||0}, T25W: ${t.top25Wins||0}, T50W: ${t.top50Wins||0}, ` +
-                  `Off Rk: #${t.offRank||'—'}, Def Rk: #${t.defRank||'—'}`
+                const payload = rowPayload(t)
                 return (
                   <tr
                     key={t.name}
