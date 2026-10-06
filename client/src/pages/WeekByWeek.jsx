@@ -3,8 +3,8 @@ import { useRankings } from '../store/RankingsContext.jsx'
 import { confColor } from '../lib/conferenceUtils.js'
 import ConfBadge from '../components/ConfBadge.jsx'
 
-const CHART_TEAMS = 50
-const ROW_H = 22
+const CHART_TEAMS = 25
+const ROW_H = 28
 const LABEL_W = 130
 const RIGHT_LABEL_W = 130
 const DOT_R = 4
@@ -236,7 +236,7 @@ export default function WeekByWeek() {
   const prevMap = new Map()
   for (const t of prevRankings) prevMap.set(t.name, t.rank)
 
-  const top50 = currentRankings.filter(t => t.rank <= CHART_TEAMS)
+  const topN = currentRankings.filter(t => t.rank <= CHART_TEAMS)
 
   return (
     <div className="card">
@@ -272,7 +272,7 @@ export default function WeekByWeek() {
           maxWeek={maxWeek}
           onWeekClick={setWeek}
         />
-      ) : top50.length === 0 ? (
+      ) : topN.length === 0 ? (
         <p className="small">No games played yet in this week.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -289,7 +289,7 @@ export default function WeekByWeek() {
               </tr>
             </thead>
             <tbody>
-              {top50.map(t => {
+              {topN.map(t => {
                 const prevRank = prevMap.get(t.name)
                 let moveEl
                 if (week <= 1 || prevRankings.length === 0) {
