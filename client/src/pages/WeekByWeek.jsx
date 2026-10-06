@@ -3,8 +3,8 @@ import { useRankings } from '../store/RankingsContext.jsx'
 import { confColor } from '../lib/conferenceUtils.js'
 import ConfBadge from '../components/ConfBadge.jsx'
 
-const CHART_TEAMS = 15
-const ROW_H = 32
+const CHART_TEAMS = 50
+const ROW_H = 22
 const LABEL_W = 130
 const RIGHT_LABEL_W = 130
 const DOT_R = 4
@@ -236,7 +236,7 @@ export default function WeekByWeek() {
   const prevMap = new Map()
   for (const t of prevRankings) prevMap.set(t.name, t.rank)
 
-  const top25 = currentRankings.filter(t => t.rank <= 25)
+  const top50 = currentRankings.filter(t => t.rank <= CHART_TEAMS)
 
   return (
     <div className="card">
@@ -272,7 +272,7 @@ export default function WeekByWeek() {
           maxWeek={maxWeek}
           onWeekClick={setWeek}
         />
-      ) : top25.length === 0 ? (
+      ) : top50.length === 0 ? (
         <p className="small">No games played yet in this week.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -289,12 +289,12 @@ export default function WeekByWeek() {
               </tr>
             </thead>
             <tbody>
-              {top25.map(t => {
+              {top50.map(t => {
                 const prevRank = prevMap.get(t.name)
                 let moveEl
                 if (week <= 1 || prevRankings.length === 0) {
                   moveEl = <span style={{ color: '#3ea7ff', fontWeight: 700, fontSize: 11 }}>NEW</span>
-                } else if (prevRank == null || prevRank > 25) {
+                } else if (prevRank == null || prevRank > CHART_TEAMS) {
                   moveEl = <span style={{ color: '#3ea7ff', fontWeight: 700, fontSize: 11 }}>NEW</span>
                 } else {
                   const diff = prevRank - t.rank

@@ -130,7 +130,57 @@ function GameTable({ team, rankMap, teamMap }) {
   )
 }
 
-function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
+function TeamTrend({ name, weekly }) {
+  if (!weekly) return <div className="small">Loading weekly trend…</div>
+  const maxWeek = weekly.maxWeek || 0
+  const pts = []
+  for (let wk = 1; wk <= maxWeek; wk++) {
+    const t = (weekly.weeks?.[wk] || []).find(x => x.name === name)
+    if (t) pts.push({ wk, rank: t.rank })
+  }
+  if (!pts.length) return <div className="small">No weekly rankings yet.</div>
+
+  const W = 560, H = 180, PL = 34, PR = 14, PT = 14, PB = 24
+  const worst = Math.max(...pts.map(p => p.rank))
+  const maxRank = worst <= 25 ? 25 : worst <= 50 ? 50 : Math.ceil(worst / 25) * 25
+  const x = wk => PL + (maxWeek > 1 ? (wk - 1) / (maxWeek - 1) : 0.5) * (W - PL - PR)
+  const y = r => PT + ((r - 1) / (maxRank - 1)) * (H - PT - PB)
+  const ticks = [1, ...[10, 25, 50, 75, 100, 125].filter(r => r <= maxRank)]
+  const first = pts[0].rank, last = pts[pts.length - 1].rank
+  const best = Math.min(...pts.map(p => p.rank))
+
+  return (
+    <div>
+      <div className="small" style={{ marginBottom: 4 }}>
+        Started #{first} · Now #{last} · Best #{best} · Worst #{worst}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {ticks.map(r => (
+          <g key={r}>
+            <line x1={PL} x2={W - PR} y1={y(r)} y2={y(r)} stroke="var(--border)" strokeWidth={0.75} />
+            <text x={PL - 6} y={y(r) + 4} textAnchor="end" fontSize={10} fill="var(--muted)">#{r}</text>
+          </g>
+        ))}
+        {Array.from({ length: maxWeek }, (_, i) => i + 1).map(wk => (
+          <text key={wk} x={x(wk)} y={H - 6} textAnchor="middle" fontSize={10} fill="var(--muted)">{wk}</text>
+        ))}
+        <polyline
+          points={pts.map(p => `${x(p.wk)},${y(p.rank)}`).join(' ')}
+          fill="none" stroke="var(--brand2)" strokeWidth={2.5} strokeLinejoin="round"
+        />
+        {pts.map(p => (
+          <g key={p.wk}>
+            <title>{`Week ${p.wk}: #${p.rank}`}</title>
+            <circle cx={x(p.wk)} cy={y(p.rank)} r={4} fill="var(--panel)" stroke="var(--brand2)" strokeWidth={2} />
+          </g>
+        ))}
+      </svg>
+      <div className="small" style={{ textAlign: 'center' }}>Week</div>
+    </div>
+  )
+}
+
+function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap, weekly }) {
   useEffect(() => {
     if (!open) return
     document.body.style.overflow = 'hidden'
@@ -201,6 +251,11 @@ function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap }) {
             </div>
 
             <div className="drawer-section">
+              <h3 style={{ margin: '12px 0 6px' }}>Weekly poll trend</h3>
+              <TeamTrend name={name} weekly={weekly} />
+            </div>
+
+            <div className="drawer-section">
               <h3 style={{ margin: '12px 0 6px' }}>Games</h3>
               <GameTable team={team} rankMap={rankMap} teamMap={teamMap} />
             </div>
@@ -232,6 +287,17 @@ function rowPayload(t) {
 export default function Rankings(){
   const { theme } = useTheme()
   const { rankings: rows, loading, error, rankMap, teamMap, year } = useRankings()
+  const [weekly, setWeekly] = useState(null)
+  useEffect(() => {
+    if (!year) return
+    let cancelled = false
+    setWeekly(null)
+    fetch(`/api/rankings/weekly?year=${year}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled) setWeekly(d || { maxWeek: 0, weeks: {} }) })
+      .catch(() => { if (!cancelled) setWeekly({ maxWeek: 0, weeks: {} }) })
+    return () => { cancelled = true }
+  }, [year])
   const toast = useToast()
 
   const [open, setOpen] = useState(false)
@@ -369,6 +435,7 @@ export default function Rankings(){
       <Drawer
         open={open}
         team={current}
+        weekly={weekly}
         onClose={() => setOpen(false)}
         onPrev={onPrev}
         onNext={onNext}

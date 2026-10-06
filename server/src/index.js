@@ -1577,7 +1577,8 @@ async function computeWeeklyRankings(year) {
 
     const ranked = rankTeams({ teamsRaw, gamesRaw: filtered, spRaw });
 
-    weeks[wk] = ranked.filter(t => t.rank <= 30).map(t => ({
+    // Every FBS team, so a team's week-by-week trend works at any rank.
+    weeks[wk] = ranked.map(t => ({
       name: t.name, rank: t.rank, score: +t.score.toFixed(4),
       w: t.w, l: t.l, conference: t.conference,
     }));
