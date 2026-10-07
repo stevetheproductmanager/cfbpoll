@@ -1566,11 +1566,13 @@ async function computeWeeklyRankings(year) {
   const weekKey = (g) => g.week ?? g.game_week ?? g.gameWeek ?? 1;
   let maxWeek = 0;
   const weekStarts = {}; // week -> earliest kickoff (ISO), used to find the current week by date
+  const weekEnds = {};   // week -> latest kickoff (ISO), for the week's date range
   for (const g of gamesRaw) {
     const w = weekKey(g);
     if (w > maxWeek) maxWeek = w;
     const d = g.startDate ?? g.start_date;
     if (d && (!weekStarts[w] || d < weekStarts[w])) weekStarts[w] = d;
+    if (d && (!weekEnds[w] || d > weekEnds[w])) weekEnds[w] = d;
   }
 
   const weeks = {};
@@ -1587,7 +1589,7 @@ async function computeWeeklyRankings(year) {
     }));
   }
 
-  return { year, maxWeek, weeks, weekStarts };
+  return { year, maxWeek, weeks, weekStarts, weekEnds };
 }
 
 // Current week by date: the latest week whose first game has kicked off.

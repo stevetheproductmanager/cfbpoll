@@ -193,6 +193,16 @@ function BumpChart({ weekData, week, maxWeek, currentWeek, onWeekClick }) {
   )
 }
 
+// "Thu, Oct 2 – Sat, Oct 4, 2026" from a week's first and last kickoff.
+function weekRangeLabel(startIso, endIso) {
+  if (!startIso) return null
+  const s = new Date(startIso), e = new Date(endIso || startIso)
+  const day = { weekday: 'short', month: 'short', day: 'numeric' }
+  const end = e.toLocaleDateString(undefined, { ...day, year: 'numeric' })
+  if (s.toDateString() === e.toDateString()) return end
+  return `${s.toLocaleDateString(undefined, day)} – ${end}`
+}
+
 export default function WeekByWeek() {
   const { rankings, year, loading, hasData } = useRankings()
 
@@ -247,7 +257,14 @@ export default function WeekByWeek() {
   return (
     <div className="card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
-        <h2 style={{ margin: 0 }}>Week {week} Rankings</h2>
+        <div>
+          <h2 style={{ margin: 0 }}>Week {week} Rankings</h2>
+          {weekRangeLabel(weekData.weekStarts?.[week], weekData.weekEnds?.[week]) && (
+            <div className="small" style={{ color: 'var(--muted)', marginTop: 2 }}>
+              {weekRangeLabel(weekData.weekStarts?.[week], weekData.weekEnds?.[week])}
+            </div>
+          )}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 200 }}>
           <span className="small">Wk 1</span>
           <input
