@@ -1565,14 +1565,24 @@ async function computeWeeklyRankings(year) {
 
   const weekKey = (g) => g.week ?? g.game_week ?? g.gameWeek ?? 1;
   let maxWeek = 0;
-  const weekStarts = {}; // week -> earliest kickoff (ISO), used to find the current week by date
+  const weekStarts = {}; // week -> earliest kickoff (ISO), for the week's date range
   const weekEnds = {};   // week -> latest kickoff (ISO), for the week's date range
+  const weekKickoffs = {};
   for (const g of gamesRaw) {
     const w = weekKey(g);
     if (w > maxWeek) maxWeek = w;
     const d = g.startDate ?? g.start_date;
     if (d && (!weekStarts[w] || d < weekStarts[w])) weekStarts[w] = d;
     if (d && (!weekEnds[w] || d > weekEnds[w])) weekEnds[w] = d;
+    if (d) (weekKickoffs[w] ||= []).push(d);
+  }
+  // week -> median kickoff (ISO). Used to decide the current week: a week
+  // isn't "current" until its main (Saturday) slate starts, so a stray
+  // Tuesday/Wednesday game doesn't flip the week early.
+  const weekMids = {};
+  for (const [w, ds] of Object.entries(weekKickoffs)) {
+    ds.sort();
+    weekMids[w] = ds[Math.floor(ds.length / 2)];
   }
 
   const weeks = {};
@@ -1589,17 +1599,17 @@ async function computeWeeklyRankings(year) {
     }));
   }
 
-  return { year, maxWeek, weeks, weekStarts, weekEnds };
+  return { year, maxWeek, weeks, weekStarts, weekEnds, weekMids };
 }
 
-// Current week by date: the latest week whose first game has kicked off.
+// Current week by date: the latest week whose median game has kicked off.
 // Past seasons resolve to maxWeek; before the season starts it's week 1.
 function currentWeekByDate(data, now = new Date()) {
-  const starts = data.weekStarts || {};
-  if (!Object.keys(starts).length) return data.maxWeek;
+  const mids = data.weekMids || {};
+  if (!Object.keys(mids).length) return data.maxWeek;
   let cur = 1;
   for (let wk = 1; wk <= data.maxWeek; wk++) {
-    if (starts[wk] && new Date(starts[wk]) <= now) cur = wk;
+    if (mids[wk] && new Date(mids[wk]) <= now) cur = wk;
   }
   return cur;
 }
