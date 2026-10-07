@@ -281,25 +281,25 @@ export default function WeekByWeek() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border-strong)', textAlign: 'left' }}>
-                <th style={{ padding: '8px 6px', width: 40 }}>#</th>
-                <th style={{ padding: '8px 6px', width: 120 }}>Conf</th>
-                <th style={{ padding: '8px 6px', width: 50 }}></th>
-                <th style={{ padding: '8px 6px', width: 200, whiteSpace: 'nowrap' }}>Team</th>
+                <th style={{ padding: '8px 6px', width: '1%' }}>#</th>
+                <th style={{ padding: '8px 6px', width: '1%' }}>Conf</th>
+                <th style={{ padding: '8px 6px', width: '1%' }}></th>
+                <th style={{ padding: '8px 12px 8px 6px', width: '1%', whiteSpace: 'nowrap' }}>Team</th>
                 {weeks.map(wk => (
                   <th
                     key={wk}
                     onClick={() => setWeek(wk)}
                     title={`Show week ${wk}`}
                     style={{
-                      padding: '8px 4px', minWidth: 36, textAlign: 'center', cursor: 'pointer',
+                      padding: '8px 4px', textAlign: 'center', cursor: 'pointer',
                       color: wk === week ? 'var(--brand2)' : undefined,
                       background: wk === week ? 'var(--brand-glow)' : undefined,
                     }}
                   >W{wk}</th>
                 ))}
-                <th style={{ padding: '8px 6px', width: 60, textAlign: 'center' }}>W-L</th>
-                <th style={{ padding: '8px 6px', width: 70, textAlign: 'right' }}>Score</th>
-                <th style={{ padding: '8px 6px', width: 80, textAlign: 'center' }}>Move</th>
+                <th style={{ padding: '8px 6px', width: '1%', whiteSpace: 'nowrap', textAlign: 'center' }}>W-L</th>
+                <th style={{ padding: '8px 6px', width: '1%', textAlign: 'right' }}>Score</th>
+                <th style={{ padding: '8px 10px', width: '1%', whiteSpace: 'nowrap', textAlign: 'center' }}>Move</th>
               </tr>
             </thead>
             <tbody>
@@ -328,7 +328,7 @@ export default function WeekByWeek() {
                     <td style={{ padding: '8px 6px' }}>
                       {logo && <img src={logo} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />}
                     </td>
-                    <td style={{ padding: '8px 6px', fontWeight: 600, whiteSpace: 'nowrap' }}>{t.name}</td>
+                    <td style={{ padding: '8px 12px 8px 6px', fontWeight: 600, whiteSpace: 'nowrap' }}>{t.name}</td>
                     {weeks.map(wk => {
                       const r = rankByWeek.get(wk)?.get(t.name)
                       return (

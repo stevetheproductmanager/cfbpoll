@@ -1564,15 +1564,8 @@ async function computeWeeklyRankings(year) {
   if (!teamsRaw || !gamesRaw) throw new Error(`No CFBD data for ${year} — download it first`);
 
   const weekKey = (g) => g.week ?? g.game_week ?? g.gameWeek ?? 1;
-  // Only weeks with completed (scored) games count — scheduled future games
-  // would otherwise extend the range with copies of the latest real week.
-  const isPlayed = (g) => {
-    const hp = g.home_points ?? g.homePoints, ap = g.away_points ?? g.awayPoints;
-    return hp != null && ap != null && !isNaN(+hp) && !isNaN(+ap);
-  };
   let maxWeek = 0;
   for (const g of gamesRaw) {
-    if (!isPlayed(g)) continue;
     const w = weekKey(g);
     if (w > maxWeek) maxWeek = w;
   }
