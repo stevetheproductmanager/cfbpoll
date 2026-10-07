@@ -194,6 +194,7 @@ function computePerformanceIndex(teamsMap, recW, loops = 15){
     t.offAdj = off.get(t.name);
     t.defAdj = def.get(t.name);
     t.rating = t.offAdj + t.defAdj;
+    t.ptsAvg = leagueAvgPF;   // league scoring baseline the off/def ratings are relative to
     // Soft saturation (no hard cap) so elite teams stay distinguishable.
     t.perf = Math.tanh(t.rating / 35);
   }

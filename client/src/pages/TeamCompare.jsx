@@ -7,24 +7,36 @@ const clamp = (v, lo=0, hi=1) => Math.max(lo, Math.min(hi, v))
 const fmt1 = n => n == null ? '—' : Number(n).toFixed(1)
 const fmt3 = n => n == null ? '—' : Number(n).toFixed(3)
 
-const PTS_PER_SCORE = 70
-const HOME_PTS = 3
+// Matchup model, tuned by backtesting every 2025 FBS-vs-FBS game from week 4
+// on (607 games, each predicted from only the games played before it):
+// - Margin comes from the opponent-adjusted net ratings (`rating`, points
+//   per game vs. an average team). They run a little compressed (recency
+//   weighting, blowout softening, early-season shrinkage), so RATING_SCALE
+//   stretches them back out. Margin MAE 12.5 pts (old composite-score
+//   method: 12.8), roughly what Vegas closing lines manage.
+// - Win probability is a normal CDF on the margin with CFB's ~15.5-pt game-
+//   to-game spread. The old logistic(spread/7) was badly overconfident, e.g.
+//   games it called 10-20% were actually won 32% of the time.
+// - Total points come from raw scoring averages (team PF/G with opponent PA/G,
+//   50/50), which beat opponent-adjusted totals (MAE 12.5 vs 13.0).
+const RATING_SCALE = 1.2
+const HOME_PTS = 2.5
+const MARGIN_SD = 15.5
 
-function predictProb(scoreA, scoreB, venue = 'neutral') {
-  let a = Number(scoreA) || 0, b = Number(scoreB) || 0
-  let spread = (a - b) * PTS_PER_SCORE
+// Normal CDF (tanh approximation, error < 0.0002)
+const normCdf = x => 0.5 * (1 + Math.tanh(0.7978845608 * (x + 0.044715 * x ** 3)))
+
+function predictMatchup(A, B, venue = 'neutral') {
+  let spread = ((Number(A.rating) || 0) - (Number(B.rating) || 0)) * RATING_SCALE
   if (venue === 'homeA') spread += HOME_PTS
   if (venue === 'homeB') spread -= HOME_PTS
-  const pA = 1 / (1 + Math.exp(-spread / 7))
-  return { pA, pB: 1 - pA, spread }
-}
-
-function projectScore(off, def, oppOff, oppDef, spread) {
-  const avg = 27
-  const rawA = ((off ?? avg) * 0.6 + (oppDef ?? avg) * 0.4)
-  const rawB = ((oppOff ?? avg) * 0.6 + (def ?? avg) * 0.4)
-  const mid = (rawA + rawB) / 2
-  return { a: Math.max(7, Math.round(mid + spread / 2)), b: Math.max(7, Math.round(mid - spread / 2)) }
+  const pA = normCdf(spread / MARGIN_SD)
+  const total = ((A.pf_pg ?? 0) + (B.pa_pg ?? 0) + (B.pf_pg ?? 0) + (A.pa_pg ?? 0)) / 2
+  return {
+    pA, pB: 1 - pA, spread, total,
+    projA: Math.max(0, Math.round(total / 2 + spread / 2)),
+    projB: Math.max(0, Math.round(total / 2 - spread / 2)),
+  }
 }
 
 function perGame(total, games) {
@@ -127,10 +139,14 @@ function TraitRow({ label, a, b, better = 'high', fmt = x => x, tip }) {
   const bWin = aNum != null && bNum != null && !aWin && aNum !== bNum
   const av = a == null ? '—' : fmt(aNum)
   const bv = b == null ? '—' : fmt(bNum)
-  const na = (better === 'high') ? (aNum ?? 0) : (aNum != null ? 1 / Math.max(aNum, 1e-6) : 0)
-  const nb = (better === 'high') ? (bNum ?? 0) : (bNum != null ? 1 / Math.max(bNum, 1e-6) : 0)
-  const total = na + nb || 1
-  const leftPct = Math.round((na / total) * 100)
+  // Bar split: 50/50 when equal, leaning toward the better value. Works for
+  // negative values too (results/SOS/quality/rating can all be below zero).
+  let leftPct = 50
+  if (aNum != null && bNum != null) {
+    const denom = Math.abs(aNum) + Math.abs(bNum)
+    const lean = denom ? (aNum - bNum) / denom : 0
+    leftPct = Math.round(50 + 50 * (better === 'high' ? lean : -lean))
+  }
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: 10, alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
@@ -202,10 +218,8 @@ export default function TeamCompare() {
     if (!team2) setTeam2(rows[1]?.name || '')
   }, [rows])
 
-  const { pA, pB, spread } = useMemo(() => {
-    if (!A || !B) return { pA: 0.5, pB: 0.5, spread: 0 }
-    return predictProb(A.score || 0, B.score || 0, venue)
-  }, [A, B, venue])
+  const pred = useMemo(() => (A && B ? predictMatchup(A, B, venue) : null), [A, B, venue])
+  const { pA, pB, spread } = pred || { pA: 0.5, pB: 0.5, spread: 0 }
 
   const inSeason = useMemo(() => {
     if (!A || !B) return { h2h: [], common: [] }
@@ -223,11 +237,6 @@ export default function TeamCompare() {
     return { h2h, common }
   }, [A, B])
 
-  const stats = useMemo(() => {
-    if (!A || !B) return null
-    const proj = projectScore(perGame(A.pf, A.games), perGame(A.pa, A.games), perGame(B.pf, B.games), perGame(B.pa, B.games), spread)
-    return { projA: proj.a, projB: proj.b }
-  }, [A, B, spread])
 
   useEffect(() => {
     if (!team1 || !team2) { setMatchup(null); return }
@@ -284,12 +293,20 @@ export default function TeamCompare() {
             </div>
             <div className="kpi">
               <div className="kpi-label">Spread</div>
-              <div className="kpi-val" style={{ fontSize: 16 }}>{favoredName} by {Math.abs(spread).toFixed(1)}</div>
+              <div className="kpi-val" style={{ fontSize: 16 }}>
+                {Math.abs(spread) < 0.5 ? 'Pick’em' : `${favoredName} by ${Math.abs(spread).toFixed(1)}`}
+              </div>
             </div>
             <div className="kpi">
               <div className="kpi-label">Projected Score</div>
               <div className="kpi-val" style={{ fontSize: 16 }}>
-                {stats ? `${stats.projA} – ${stats.projB}` : `${A.name} vs ${B.name}`}
+                {pred ? `${pred.projA} – ${pred.projB}` : `${A.name} vs ${B.name}`}
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Projected Total</div>
+              <div className="kpi-val" style={{ fontSize: 16 }}>
+                {pred ? pred.total.toFixed(1) : '—'}
               </div>
             </div>
             <div className="kpi">
@@ -319,6 +336,9 @@ export default function TeamCompare() {
             </div>
 
             <TraitRow label="Score" a={A.score} b={B.score} better="high" fmt={fmt3} tip="Overall ranking score" />
+            <TraitRow label="Net Rating" a={A.rating} b={B.rating} better="high" fmt={fmt1} tip="Opponent-adjusted points per game vs. an average team — drives the spread" />
+            <TraitRow label="Adj Off" a={A.offAdj} b={B.offAdj} better="high" fmt={fmt1} tip="Points scored per game above what opponents usually allow" />
+            <TraitRow label="Adj Def" a={A.defAdj} b={B.defAdj} better="high" fmt={fmt1} tip="Points allowed per game below what opponents usually score" />
             <TraitRow label="Results" a={A.results} b={B.results} better="high" fmt={fmt3} tip="Win/loss quality" />
             <TraitRow label="SOS" a={A.sos} b={B.sos} better="high" fmt={fmt3} tip="Strength of Schedule" />
             <TraitRow label="Quality" a={A.quality} b={B.quality} better="high" fmt={fmt3} tip="Quality wins metric" />
@@ -329,7 +349,7 @@ export default function TeamCompare() {
             <TraitRow label="Top 10 W" a={A.top10Wins} b={B.top10Wins} better="high" fmt={x => x} />
             <TraitRow label="Top 25 W" a={A.top25Wins} b={B.top25Wins} better="high" fmt={x => x} />
             <TraitRow label="Top 50 W" a={A.top50Wins} b={B.top50Wins} better="high" fmt={x => x} />
-            <TraitRow label="Momentum" a={A.rec || 0} b={B.rec || 0} better="high" fmt={fmt3} tip="Recent-half vs first-half trend" />
+            <TraitRow label="Momentum" a={A.momentum || 0} b={B.momentum || 0} better="high" fmt={fmt3} tip="Last few games vs. opponent-adjusted expectation" />
           </div>
 
           {/* H2H & Common Opponents */}
