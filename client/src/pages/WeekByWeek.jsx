@@ -270,12 +270,15 @@ export default function WeekByWeek() {
           <input
             type="range"
             min={1}
-            max={currentWeek}
-            value={week ?? maxWeek}
-            onChange={e => setWeek(Number(e.target.value))}
+            max={maxWeek}
+            step={1}
+            value={week ?? currentWeek}
+            // Track spans the whole season (one step per week column), but
+            // future weeks can't be selected — clamp to the current week.
+            onChange={e => setWeek(Math.min(Number(e.target.value), currentWeek))}
             style={{ flex: 1 }}
           />
-          <span className="small">Wk {currentWeek}</span>
+          <span className="small">Wk {maxWeek}</span>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {['chart', 'table'].map(v => (
