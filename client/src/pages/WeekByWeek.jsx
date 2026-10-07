@@ -284,14 +284,14 @@ export default function WeekByWeek() {
                 <th style={{ padding: '8px 6px', width: 40 }}>#</th>
                 <th style={{ padding: '8px 6px', width: 120 }}>Conf</th>
                 <th style={{ padding: '8px 6px', width: 50 }}></th>
-                <th style={{ padding: '8px 6px' }}>Team</th>
+                <th style={{ padding: '8px 6px', width: 200, whiteSpace: 'nowrap' }}>Team</th>
                 {weeks.map(wk => (
                   <th
                     key={wk}
                     onClick={() => setWeek(wk)}
                     title={`Show week ${wk}`}
                     style={{
-                      padding: '8px 4px', width: 36, textAlign: 'center', cursor: 'pointer',
+                      padding: '8px 4px', minWidth: 36, textAlign: 'center', cursor: 'pointer',
                       color: wk === week ? 'var(--brand2)' : undefined,
                       background: wk === week ? 'var(--brand-glow)' : undefined,
                     }}
@@ -328,7 +328,7 @@ export default function WeekByWeek() {
                     <td style={{ padding: '8px 6px' }}>
                       {logo && <img src={logo} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />}
                     </td>
-                    <td style={{ padding: '8px 6px', fontWeight: 600 }}>{t.name}</td>
+                    <td style={{ padding: '8px 6px', fontWeight: 600, whiteSpace: 'nowrap' }}>{t.name}</td>
                     {weeks.map(wk => {
                       const r = rankByWeek.get(wk)?.get(t.name)
                       return (
