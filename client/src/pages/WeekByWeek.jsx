@@ -282,11 +282,9 @@ export default function WeekByWeek() {
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border-strong)', textAlign: 'left' }}>
                 <th style={{ padding: '8px 6px', width: 40 }}>#</th>
+                <th style={{ padding: '8px 6px', width: 120 }}>Conf</th>
                 <th style={{ padding: '8px 6px', width: 50 }}></th>
                 <th style={{ padding: '8px 6px' }}>Team</th>
-                <th style={{ padding: '8px 6px', width: 120 }}>Conf</th>
-                <th style={{ padding: '8px 6px', width: 60, textAlign: 'center' }}>W-L</th>
-                <th style={{ padding: '8px 6px', width: 70, textAlign: 'right' }}>Score</th>
                 {weeks.map(wk => (
                   <th
                     key={wk}
@@ -299,6 +297,8 @@ export default function WeekByWeek() {
                     }}
                   >W{wk}</th>
                 ))}
+                <th style={{ padding: '8px 6px', width: 60, textAlign: 'center' }}>W-L</th>
+                <th style={{ padding: '8px 6px', width: 70, textAlign: 'right' }}>Score</th>
                 <th style={{ padding: '8px 6px', width: 80, textAlign: 'center' }}>Move</th>
               </tr>
             </thead>
@@ -323,16 +323,12 @@ export default function WeekByWeek() {
                   <tr key={t.name} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '8px 6px', fontWeight: 700, color: 'var(--brand2)' }}>{t.rank}</td>
                     <td style={{ padding: '8px 6px' }}>
+                      <ConfBadge conference={t.conference} />
+                    </td>
+                    <td style={{ padding: '8px 6px' }}>
                       {logo && <img src={logo} alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />}
                     </td>
                     <td style={{ padding: '8px 6px', fontWeight: 600 }}>{t.name}</td>
-                    <td style={{ padding: '8px 6px' }}>
-                      <ConfBadge conference={t.conference} />
-                    </td>
-                    <td style={{ padding: '8px 6px', textAlign: 'center' }}>{t.w}-{t.l}</td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                      {t.score.toFixed(3)}
-                    </td>
                     {weeks.map(wk => {
                       const r = rankByWeek.get(wk)?.get(t.name)
                       return (
@@ -347,6 +343,10 @@ export default function WeekByWeek() {
                         >{r ?? '—'}</td>
                       )
                     })}
+                    <td style={{ padding: '8px 6px', textAlign: 'center' }}>{t.w}-{t.l}</td>
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {t.score.toFixed(3)}
+                    </td>
                     <td style={{ padding: '8px 6px', textAlign: 'center' }}>{moveEl}</td>
                   </tr>
                 )

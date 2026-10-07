@@ -322,7 +322,7 @@ table tbody tr:hover {
 }
 .modal-panel {
   width: 100%;
-  max-width: 960px;
+  max-width: 1200px;
   height: calc(100vh - 48px);
   height: calc(100dvh - 48px);
   background: var(--panel-solid);
