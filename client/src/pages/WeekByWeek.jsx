@@ -237,6 +237,8 @@ export default function WeekByWeek() {
   for (const t of prevRankings) prevMap.set(t.name, t.rank)
 
   const topN = currentRankings.filter(t => t.rank <= CHART_TEAMS)
+  const weeks = Array.from({ length: maxWeek }, (_, i) => i + 1)
+  const rankByWeek = new Map(weeks.map(wk => [wk, new Map((weekData.weeks[wk] || []).map(t => [t.name, t.rank]))]))
 
   return (
     <div className="card">
@@ -285,6 +287,18 @@ export default function WeekByWeek() {
                 <th style={{ padding: '8px 6px', width: 120 }}>Conf</th>
                 <th style={{ padding: '8px 6px', width: 60, textAlign: 'center' }}>W-L</th>
                 <th style={{ padding: '8px 6px', width: 70, textAlign: 'right' }}>Score</th>
+                {weeks.map(wk => (
+                  <th
+                    key={wk}
+                    onClick={() => setWeek(wk)}
+                    title={`Show week ${wk}`}
+                    style={{
+                      padding: '8px 4px', width: 36, textAlign: 'center', cursor: 'pointer',
+                      color: wk === week ? 'var(--brand2)' : undefined,
+                      background: wk === week ? 'var(--brand-glow)' : undefined,
+                    }}
+                  >W{wk}</th>
+                ))}
                 <th style={{ padding: '8px 6px', width: 80, textAlign: 'center' }}>Move</th>
               </tr>
             </thead>
@@ -294,7 +308,7 @@ export default function WeekByWeek() {
                 let moveEl
                 if (week <= 1 || prevRankings.length === 0) {
                   moveEl = <span style={{ color: '#3ea7ff', fontWeight: 700, fontSize: 11 }}>NEW</span>
-                } else if (prevRank == null || prevRank > CHART_TEAMS) {
+                } else if (prevRank == null) {
                   moveEl = <span style={{ color: '#3ea7ff', fontWeight: 700, fontSize: 11 }}>NEW</span>
                 } else {
                   const diff = prevRank - t.rank
@@ -319,6 +333,20 @@ export default function WeekByWeek() {
                     <td style={{ padding: '8px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {t.score.toFixed(3)}
                     </td>
+                    {weeks.map(wk => {
+                      const r = rankByWeek.get(wk)?.get(t.name)
+                      return (
+                        <td
+                          key={wk}
+                          style={{
+                            padding: '8px 4px', textAlign: 'center', fontVariantNumeric: 'tabular-nums',
+                            fontWeight: wk === week ? 700 : 400,
+                            color: r == null ? 'var(--muted)' : r <= CHART_TEAMS ? undefined : 'var(--muted)',
+                            background: wk === week ? 'var(--brand-glow)' : undefined,
+                          }}
+                        >{r ?? '—'}</td>
+                      )
+                    })}
                     <td style={{ padding: '8px 6px', textAlign: 'center' }}>{moveEl}</td>
                   </tr>
                 )

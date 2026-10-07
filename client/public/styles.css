@@ -27,6 +27,12 @@ body {
   margin: 0 auto;
   padding: 0 24px 32px;
 }
+/* Admin back-office: use the full width of wide monitors; gutters scale with the viewport. */
+.admin-wide .container,
+.admin-wide .topbar-inner,
+.admin-wide .nav-strip-inner { max-width: none; }
+.admin-wide .container { padding-left: clamp(12px, 2vw, 40px); padding-right: clamp(12px, 2vw, 40px); }
+.admin-wide table.table { width: 100%; }
 
 /* ---- Top Bar ---- */
 .topbar {

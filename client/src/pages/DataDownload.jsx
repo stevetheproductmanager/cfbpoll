@@ -1,7 +1,107 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { X, Copy, ExternalLink } from 'lucide-react'
 import { downloadSeason, status } from '../api'
 import { getManifest, getCachedManifest } from '../store/dataState'
 import { useRankings } from '../store/RankingsContext.jsx'
+
+// Above this size the preview skips syntax colouring so huge files stay responsive.
+const HIGHLIGHT_LIMIT = 400_000
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function highlightJson(text) {
+  return escapeHtml(text).replace(
+    /("(?:\u[a-fA-F0-9]{4}|\[^u]|[^\\"])*"(\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    (m) => {
+      let color = 'var(--brand2)'                       // number
+      if (/^"/.test(m)) color = /:$/.test(m) ? 'var(--text)' : 'var(--ok)'  // key : string
+      else if (/true|false/.test(m)) color = 'var(--warn, #f39c12)'
+      else if (/null/.test(m)) color = 'var(--muted)'
+      const weight = /:$/.test(m) ? 600 : 400
+      return `<span style="color:${color};font-weight:${weight}">${m}</span>`
+    }
+  )
+}
+
+function JsonPreviewDialog({ file, onClose }) {
+  const [state, setState] = useState({ loading: true, data: null, error: null })
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(file.url)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(data => { if (!cancelled) setState({ loading: false, data, error: null }) })
+      .catch(e => { if (!cancelled) setState({ loading: false, data: null, error: String(e.message || e) }) })
+    return () => { cancelled = true }
+  }, [file.url])
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => { document.body.style.overflow = ''; window.removeEventListener('keydown', onKey) }
+  }, [onClose])
+
+  const pretty = useMemo(() => state.data == null ? '' : JSON.stringify(state.data, null, 2), [state.data])
+  const html = useMemo(() => pretty && pretty.length <= HIGHLIGHT_LIMIT ? highlightJson(pretty) : null, [pretty])
+  const summary = Array.isArray(state.data)
+    ? `${state.data.length.toLocaleString()} records`
+    : state.data && typeof state.data === 'object' ? `${Object.keys(state.data).length} keys` : ''
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(pretty); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {}
+  }
+
+  return createPortal(
+    <>
+      <div className="modal-backdrop" onClick={onClose} />
+      <div className="modal-container" onClick={onClose}>
+        <aside className="modal-panel" style={{ maxWidth: 1100 }} onClick={e => e.stopPropagation()}>
+          <div className="modal-header">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <code className="inline" style={{ fontSize: 15 }}>{file.name}</code>
+              <span className="small" style={{ marginLeft: 10 }}>
+                {summary}{pretty ? ` · ${(pretty.length / 1024).toFixed(0)} KB` : ''}
+              </span>
+            </div>
+            <button className="btn" onClick={copy} disabled={!pretty} title="Copy formatted JSON">
+              <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
+            </button>
+            <a className="btn" href={file.url} target="_blank" rel="noreferrer" title="Open raw JSON in a new tab">
+              <ExternalLink size={14} /> Raw
+            </a>
+            <button className="nav-btn" onClick={onClose} title="Close (Esc)"><X size={18} /></button>
+          </div>
+          <div className="modal-body" style={{ padding: 0 }}>
+            {state.loading && <div className="small" style={{ padding: 20 }}>Loading…</div>}
+            {state.error && <div style={{ padding: 20 }}><span className="badge err">Error</span> {state.error}</div>}
+            {pretty && (
+              <>
+                {!html && (
+                  <div className="small" style={{ padding: '10px 20px 0' }}>
+                    Large file — shown without colour highlighting.
+                  </div>
+                )}
+                <pre style={{
+                  margin: 0, padding: '14px 20px', fontSize: 12.5, lineHeight: 1.5,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  whiteSpace: 'pre', overflowX: 'auto', color: 'var(--text)',
+                }}>
+                  {html ? <code dangerouslySetInnerHTML={{ __html: html }} /> : <code>{pretty}</code>}
+                </pre>
+              </>
+            )}
+          </div>
+        </aside>
+      </div>
+    </>,
+    document.body
+  )
+}
 
 export default function DataDownload() {
   const { year, setYear, forceRefresh } = useRankings();
@@ -10,6 +110,7 @@ export default function DataDownload() {
   const [server, setServer] = useState(null)
   const [err, setErr] = useState(null)
   const [manifest, setManifest] = useState(getCachedManifest())
+  const [preview, setPreview] = useState(null)
 
   // small helper to fetch a JSON and return a "count" for display
   const fetchCount = async (url) => {
@@ -140,7 +241,7 @@ const rows = await Promise.all(files.map(async (f) => {
     <div className="card">
       <h2>Data Download</h2>
       <p className="small">
-        Downloads saved locally under <code className="inline">server/data/{'{year}'}</code>.
+        Pulls teams, games, and ratings for the season from the College Football Data API and stores them in the site database. Re-downloading a season replaces its existing files.
       </p>
 
       <div className="row" style={{ marginTop: 10 }}>
@@ -196,13 +297,12 @@ const rows = await Promise.all(files.map(async (f) => {
             </span>
           </td>
           <td>
-            <a
-              href={`/data/${result.year}/${r.slug}.json`}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              className="btn"
+              onClick={() => setPreview({ name: `${r.slug}.json`, url: `/data/${result.year}/${r.slug}.json` })}
             >
-              view
-            </a>
+              Preview JSON
+            </button>
           </td>
         </tr>
       ))}
@@ -226,6 +326,8 @@ const rows = await Promise.all(files.map(async (f) => {
           )}
         </div>
       )}
+
+      {preview && <JsonPreviewDialog file={preview} onClose={() => setPreview(null)} />}
 
       {!result && !busy && (
         <div className="progress small">

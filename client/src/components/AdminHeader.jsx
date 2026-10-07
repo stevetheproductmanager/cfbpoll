@@ -41,6 +41,7 @@ const ADMIN_NAV = [
     tabs: [
       { key: 'weekmgmt', label: 'Week Management' },
       { key: 'mockvoters', label: 'Mock Voters' },
+      { key: 'data', label: 'Data Download' },
       { key: 'scheduleddownload', label: 'Scheduled Data Download' },
       { key: 'emailnotifications', label: 'Email Notifications' },
       { key: 'custompolls', label: 'Custom Polls' },
@@ -52,7 +53,6 @@ const ADMIN_NAV = [
       { key: 'users', label: 'Users' },
       { key: 'ballotmod', label: 'Ballots' },
       { key: 'sitesettings', label: 'Settings' },
-      { key: 'data', label: 'Data' },
       { key: 'auditlog', label: 'Audit Log' },
     ],
   },

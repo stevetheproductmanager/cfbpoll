@@ -62,7 +62,7 @@ function DataGate() {
     <div className="welcome-gate">
       <div style={{ marginBottom: 16, filter: 'drop-shadow(0 4px 12px rgba(77, 142, 255, 0.3))' }}><Goal size={56} color="var(--brand)" /></div>
       <h2>CFB Computer Rankings</h2>
-      <p>Download season data to get started. This pulls teams, games, and ratings from the College Football Data API and stores them locally.</p>
+      <p>Download season data to get started. This pulls teams, games, and ratings from the College Football Data API and stores them in the site database.</p>
       <DataDownload />
     </div>
   )
@@ -106,7 +106,7 @@ function AdminContent() {
   }
 
   return (
-    <>
+    <div className="admin-wide">
       <AdminHeader
         group={group}
         subTab={subTab}
@@ -116,7 +116,7 @@ function AdminContent() {
       <div className="container">
         {NO_DATA_GATE_TABS.includes(subTab) ? renderPage() : !hasData && !loading ? <DataGate /> : hasData ? renderPage() : null}
       </div>
-    </>
+    </div>
   )
 }
 
