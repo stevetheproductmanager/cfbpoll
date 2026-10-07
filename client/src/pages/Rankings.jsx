@@ -181,7 +181,24 @@ function TeamTrend({ name, weekly }) {
   )
 }
 
-function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap, weekly }) {
+/** Per-week rankings for the season (for the drawer's trend chart). */
+export function useWeeklyRankings(year) {
+  const [weekly, setWeekly] = useState(null)
+  useEffect(() => {
+    if (!year) return
+    let cancelled = false
+    setWeekly(null)
+    fetch(`/api/rankings/weekly?year=${year}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled) setWeekly(d || { maxWeek: 0, weeks: {} }) })
+      .catch(() => { if (!cancelled) setWeekly({ maxWeek: 0, weeks: {} }) })
+    return () => { cancelled = true }
+  }, [year])
+  return weekly
+}
+
+// Team detail dialog — also used by the Narrative Top 25 cards.
+export function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap, weekly }) {
   useEffect(() => {
     if (!open) return
     document.body.style.overflow = 'hidden'
@@ -288,17 +305,7 @@ function rowPayload(t) {
 export default function Rankings(){
   const { theme } = useTheme()
   const { rankings: rows, loading, error, rankMap, teamMap, year } = useRankings()
-  const [weekly, setWeekly] = useState(null)
-  useEffect(() => {
-    if (!year) return
-    let cancelled = false
-    setWeekly(null)
-    fetch(`/api/rankings/weekly?year=${year}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled) setWeekly(d || { maxWeek: 0, weeks: {} }) })
-      .catch(() => { if (!cancelled) setWeekly({ maxWeek: 0, weeks: {} }) })
-    return () => { cancelled = true }
-  }, [year])
+  const weekly = useWeeklyRankings(year)
   const toast = useToast()
 
   const [open, setOpen] = useState(false)

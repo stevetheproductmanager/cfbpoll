@@ -61,7 +61,9 @@ async function fetchMatchup({ team1, team2, year }) {
 function TeamPicker({ label, value, onChange, teams }) {
   const [q, setQ] = useState(value || '')
   const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)   // keyboard-highlighted option
   const box = useRef(null)
+  const listRef = useRef(null)
   useEffect(() => setQ(value || ''), [value])
   useEffect(() => {
     const h = e => { if (box.current && !box.current.contains(e.target)) setOpen(false) }
@@ -82,6 +84,28 @@ function TeamPicker({ label, value, onChange, teams }) {
 
   const selected = useMemo(() => teams.find(t => t.school === value), [teams, value])
 
+  useEffect(() => { setActive(0) }, [q])
+  useEffect(() => {
+    listRef.current?.children[active]?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+
+  const choose = (t) => { onChange(t.school); setQ(t.school); setOpen(false) }
+  const onKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!open) { setOpen(true); return }
+      setActive(i => Math.min(i + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActive(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      const t = filtered[active] || filtered[0]
+      if (t) { e.preventDefault(); choose(t); e.currentTarget.blur() }
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+    }
+  }
+
   return (
     <div ref={box} style={{ position: 'relative', flex: '1 1 240px', minWidth: 240 }}>
       <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--muted)', marginBottom: 4, display: 'block' }}>{label}</label>
@@ -98,25 +122,28 @@ function TeamPicker({ label, value, onChange, teams }) {
           value={q}
           onFocus={() => { setOpen(true); setQ('') }}
           onChange={e => { setQ(e.target.value); if (!open) setOpen(true) }}
-          onKeyDown={e => { if (e.key === 'Enter' && filtered[0]) { onChange(filtered[0].school); setQ(filtered[0].school); setOpen(false) } }}
+          onKeyDown={onKeyDown}
         />
         {value && (
           <button onClick={() => { onChange(''); setQ(''); }} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 8, margin: -8, lineHeight: 1, display: 'inline-flex' }} title="Clear"><X size={14} /></button>
         )}
       </div>
       {open && (
-        <div style={{
+        <div ref={listRef} style={{
           position: 'absolute', zIndex: 1000, top: '100%', left: 0, right: 0, marginTop: 4,
           maxHeight: 320, overflowY: 'auto',
           background: 'var(--panel-solid)', border: '1px solid var(--border-strong)', borderRadius: 12,
           boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
         }}>
-          {filtered.map(t => (
+          {filtered.map((t, i) => (
             <div key={t.id}
-              onClick={() => { onChange(t.school); setQ(t.school); setOpen(false) }}
-              style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 12px', cursor: 'pointer', transition: 'background 100ms' }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--brand-glow)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => choose(t)}
+              onMouseEnter={() => setActive(i)}
+              style={{
+                display: 'flex', gap: 10, alignItems: 'center', padding: '8px 12px', cursor: 'pointer', transition: 'background 100ms',
+                background: i === active ? 'var(--brand-glow)' : 'transparent',
+              }}
             >
               {t.logos?.[0] && <img src={t.logos[0]} alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />}
               <div>

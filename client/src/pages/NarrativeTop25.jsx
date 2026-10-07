@@ -4,9 +4,12 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRankings } from '../store/RankingsContext.jsx'
 import ConfBadge from '../components/ConfBadge.jsx'
 import TeamLogo from '../components/TeamLogo.jsx'
+import { Drawer, useWeeklyRankings } from './Rankings.jsx'
 
 const fmt2 = (n) =>
   n == null ? '—' : (typeof n === 'number' ? n.toFixed(2) : Number(n).toFixed(2))
+const fmt1 = (n) =>
+  n == null ? '—' : Number(n).toFixed(1)
 const fmt3 = (n) =>
   n == null ? '—' : (typeof n === 'number' ? n.toFixed(3) : Number(n).toFixed(3))
 
@@ -282,7 +285,7 @@ function buildCommonOpponents(teamA, teamB, maxRows = 5) {
 
 /* ------------------ Card component for a single team ------------------ */
 
-function TeamNarrativeCard({ team, maxNarrative, metricRanks, groupSize }) {
+function TeamNarrativeCard({ team, maxNarrative, metricRanks, groupSize, onOpen }) {
   if (!team) return null
 
   const {
@@ -330,289 +333,119 @@ function TeamNarrativeCard({ team, maxNarrative, metricRanks, groupSize }) {
   const lossProfile = (narrativeLosses || []).slice(0, 2)
 
   const rel = metricRanks?.get(name) || {}
-  const scoreRankRel = rel.score
-  const resultsRankRel = rel.results
-  const sosRankRel = rel.sosRank
-  const narrativeRankRel = rel.narrativeScore
-  const t25RankRel = rel.top25Wins
+  const of = (r) => (r != null ? `${ordinal(r)} of ${groupSize}` : null)
+
+  // Compact stat tiles: label / value / within-group context. Replaces the
+  // two wrapping badge strips.
+  const tiles = [
+    { label: 'Score', value: fmt3(score), sub: of(rel.score) },
+    { label: 'Results', value: fmt3(results), sub: of(rel.results) },
+    { label: 'SOS', value: sosRank != null ? `#${Math.round(sosRank)}` : '—', sub: rel.sosRank != null ? `${ordinal(rel.sosRank)} toughest` : null, tip: `SOS ${fmt3(sos)} (FBS rank; lower = tougher)` },
+    { label: 'Quality', value: fmt3(quality), sub: null },
+    { label: 'PF / G', value: fmt1(pfPer), sub: offRank != null ? `Off #${offRank}` : null },
+    { label: 'PA / G', value: fmt1(paPer), sub: defRank != null ? `Def #${defRank}` : null },
+    { label: 'T10/25/50 W', value: `${top10Wins || 0}/${top25Wins || 0}/${top50Wins || 0}`, sub: rel.top25Wins != null ? `T25 ${ordinal(rel.top25Wins)}` : null, tip: 'Wins over Top 10 / Top 25 / Top 50 teams' },
+    { label: 'Narrative', value: fmt2(narrativeScore), sub: of(rel.narrativeScore) },
+  ]
+
+  const openTeam = onOpen ? () => onOpen(team) : undefined
+  const clickable = onOpen ? { cursor: 'pointer' } : null
+
+  const gameTable = (list, emptyText) => list.length ? (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+      <thead>
+        <tr className="small" style={{ textAlign: 'left', color: 'var(--muted)' }}>
+          <th style={{ padding: '3px 4px' }}>Opponent</th>
+          <th style={{ padding: '3px 4px' }}>Rk</th>
+          <th style={{ padding: '3px 4px' }}>Wk</th>
+          <th style={{ padding: '3px 4px' }}>Loc</th>
+          <th style={{ padding: '3px 4px' }}>Score</th>
+          <th style={{ padding: '3px 4px', textAlign: 'right' }} title="Narrative weight">Wt</th>
+        </tr>
+      </thead>
+      <tbody>
+        {list.map((g, i) => (
+          <tr key={`${g.opp}-${g.week}-${i}`} style={{ borderTop: '1px solid var(--border)' }}>
+            <td style={{ padding: '3px 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 110 }} title={g.opp}>{g.opp}</td>
+            <td style={{ padding: '3px 4px' }}>{g.oppRank && g.oppRank < 900 ? `#${g.oppRank}` : '—'}</td>
+            <td style={{ padding: '3px 4px' }}>{g.week ?? '—'}</td>
+            <td style={{ padding: '3px 4px' }}>{g.loc}</td>
+            <td style={{ padding: '3px 4px', whiteSpace: 'nowrap' }}>{g.score}</td>
+            <td style={{ padding: '3px 4px', textAlign: 'right' }}>{fmt2(g.weight)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ) : (
+    <div className="small" style={{ color: 'var(--muted)' }}>{emptyText}</div>
+  )
 
   return (
     <div
       className="card"
-      style={{
-        borderRadius: 16,
-        padding: 14,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        minHeight: 230,
-      }}
+      style={{ borderRadius: 16, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 230 }}
     >
-      {/* Header: rank, team, conf, record */}
-      <div
-        className="row"
-        style={{
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10,
-        }}
-      >
-        <div className="row" style={{ alignItems: 'center', gap: 10 }}>
+      {/* Header: rank, team (click → team dialog), conf */}
+      <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div className="row" style={{ alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, minWidth: 28, textAlign: 'right' }}>{rank}</div>
           <div
-            style={{
-              fontSize: 22,
-              fontWeight: 700,
-              minWidth: 28,
-              textAlign: 'right',
-            }}
+            className="row"
+            style={{ alignItems: 'center', gap: 10, minWidth: 0, ...clickable }}
+            onClick={openTeam}
+            role={onOpen ? 'button' : undefined}
+            tabIndex={onOpen ? 0 : undefined}
+            onKeyDown={onOpen ? (e) => { if (e.key === 'Enter') openTeam() } : undefined}
+            title={onOpen ? `Open ${name} details` : undefined}
           >
-            {rank}
-          </div>
-          {logo ? (
-            <TeamLogo src={logo} alt={name} size={30} />
-          ) : (
-            <div style={{ width: 30, height: 30 }} />
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontWeight: 600 }}>{name}</div>
-            <div className="small" style={{ color: 'var(--muted)' }}>
-              {w}-{l} • {gp} gms
+            {logo ? <TeamLogo src={logo} alt={name} size={30} /> : <div style={{ width: 30, height: 30 }} />}
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ fontWeight: 600, textDecoration: onOpen ? 'underline dotted' : undefined, textUnderlineOffset: 3 }}>{name}</div>
+              <div className="small" style={{ color: 'var(--muted)' }}>{w}-{l} • {gp} gms</div>
             </div>
           </div>
         </div>
-
-        <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-          <ConfBadge conference={conference} size={24} />
-          <span className="badge" title="Top 10 / Top 25 / Top 50 Wins">
-            T10: {top10Wins || 0} • T25: {top25Wins || 0} • T50: {top50Wins || 0}
-          </span>
-        </div>
+        <ConfBadge conference={conference} size={24} />
       </div>
 
-      {/* Metrics strip: Score, Results, SOS, Quality, Recency, Off/Def, PF/PA */}
-      <div
-        className="row"
-        style={{
-          flexWrap: 'wrap',
-          gap: 6,
-          fontSize: 11,
-          color: 'var(--muted)',
-        }}
-      >
-        <span className="badge">Score {fmt3(score)}</span>
-        <span className="badge">Results {fmt3(results)}</span>
-        <span className="badge">
-          SOS #{sosRank != null ? Math.round(sosRank) : '—'} / {fmt3(sos)}
-        </span>
-        {quality != null && <span className="badge">Quality {fmt3(quality)}</span>}
-        {rec != null && <span className="badge">Recency {fmt3(rec)}</span>}
-        <span className="badge">
-          PF {fmt2(pfPer)}/g • PA {fmt2(paPer)}/g
-        </span>
-        {(offRank != null || defRank != null) && (
-          <span className="badge">
-            Off #{offRank ?? '—'} • Def #{defRank ?? '—'}
-          </span>
-        )}
-      </div>
-
-      {/* Relative ranks strip */}
-      <div
-        className="row"
-        style={{
-          flexWrap: 'wrap',
-          gap: 6,
-          fontSize: 11,
-          marginTop: 2,
-        }}
-      >
-        {scoreRankRel != null && (
-          <span className="badge" title="Within this top group">
-            Score {ordinal(scoreRankRel)} of {groupSize}
-          </span>
-        )}
-        {resultsRankRel != null && (
-          <span className="badge" title="Within this top group">
-            Results {ordinal(resultsRankRel)} of {groupSize}
-          </span>
-        )}
-        {sosRankRel != null && (
-          <span className="badge" title="Within this top group (lower is tougher)">
-            SOS {ordinal(sosRankRel)} toughest of {groupSize}
-          </span>
-        )}
-        {t25RankRel != null && (
-          <span className="badge" title="Top 25 wins within this group">
-            T25 W {ordinal(t25RankRel)} of {groupSize}
-          </span>
-        )}
-        {narrativeRankRel != null && (
-          <span className="badge" title="Narrative score within this group">
-            Narrative {ordinal(narrativeRankRel)} of {groupSize}
-          </span>
-        )}
-      </div>
-
-      {/* Narrative score + headline summary */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1.4fr)',
-          gap: 10,
-          alignItems: 'center',
-        }}
-      >
-        <div>
-          <div className="small" style={{ marginBottom: 2 }}>
-            Narrative score: <b>{fmt2(narrativeScore)}</b>
-          </div>
+      {/* Stat tiles */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 4 }}>
+        {tiles.map(t => (
           <div
-            style={{
-              height: 10,
-              borderRadius: 999,
-              background: 'rgba(255,255,255,.08)',
-              overflow: 'hidden',
-            }}
+            key={t.label}
+            title={t.tip}
+            style={{ background: 'var(--panel-2)', borderRadius: 8, padding: '4px 6px', minWidth: 0 }}
           >
-            <div
-              style={{
-                height: '100%',
-                width: `${barPct}%`,
-                background:
-                  'linear-gradient(90deg, var(--brand) 0%, var(--brand2) 100%)',
-              }}
-            />
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.label}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums', lineHeight: 1.3 }}>{t.value}</div>
+            <div style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: 13 }}>{t.sub || ''}</div>
           </div>
-          <div className="small" style={{ color: 'var(--muted)', marginTop: 4 }}>
-            {narrativeBestWin
-              ? formatGameLine(narrativeBestWin, false)
-              : 'No high-profile win yet.'}
-          </div>
-        </div>
+        ))}
+      </div>
 
-        <div className="small" style={{ color: 'var(--muted)' }}>
-          {narrativeWorstLoss ? (
-            <>
-              <span style={{ color: '#ffb3b3', fontWeight: 500 }}>Concern:</span>{' '}
-              {formatGameLine(narrativeWorstLoss, true)}
-            </>
-          ) : (
-            <>No obvious narrative concern (no loud loss yet).</>
-          )}
+      {/* Narrative bar + headline best win / concern */}
+      <div>
+        <div style={{ height: 6, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }} title={`Narrative score ${fmt2(narrativeScore)}`}>
+          <div style={{ height: '100%', width: `${barPct}%`, background: 'linear-gradient(90deg, var(--brand) 0%, var(--brand2) 100%)' }} />
+        </div>
+        <div className="small" style={{ marginTop: 6, color: 'var(--muted)' }}>
+          <span style={{ color: 'var(--ok)', fontWeight: 600 }}>Best:</span>{' '}
+          {narrativeBestWin ? formatGameLine(narrativeBestWin, false) : 'No high-profile win yet.'}
+        </div>
+        <div className="small" style={{ marginTop: 2, color: 'var(--muted)' }}>
+          <span style={{ color: 'var(--err)', fontWeight: 600 }}>Concern:</span>{' '}
+          {narrativeWorstLoss ? formatGameLine(narrativeWorstLoss, true) : 'None yet.'}
         </div>
       </div>
 
-      {/* Signature wins + Loss profile tables */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1.1fr) minmax(0, 1.1fr)',
-          gap: 10,
-        }}
-      >
-        <div>
-          <div className="small" style={{ fontWeight: 600, marginBottom: 4 }}>
-            Signature wins
-          </div>
-          {topWins.length ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table
-                style={{
-                  width: '100%',
-                  borderCollapse: 'collapse',
-                  fontSize: 11,
-                }}
-              >
-                <thead>
-                  <tr
-                    className="small"
-                    style={{ textAlign: 'left', color: 'var(--muted)' }}
-                  >
-                    <th style={{ padding: '3px 4px' }}>Opponent</th>
-                    <th style={{ padding: '3px 4px' }}>Opp Rk</th>
-                    <th style={{ padding: '3px 4px' }}>Wk</th>
-                    <th style={{ padding: '3px 4px' }}>Loc</th>
-                    <th style={{ padding: '3px 4px' }}>Score</th>
-                    <th style={{ padding: '3px 4px' }}>Wt</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topWins.map((g, i) => (
-                    <tr
-                      key={`${g.opp}-${g.week}-${i}`}
-                      style={{ borderTop: '1px solid #1b2447' }}
-                    >
-                      <td style={{ padding: '3px 4px' }}>{g.opp}</td>
-                      <td style={{ padding: '3px 4px' }}>
-                        {g.oppRank && g.oppRank < 900 ? `#${g.oppRank}` : '—'}
-                      </td>
-                      <td style={{ padding: '3px 4px' }}>{g.week ?? '—'}</td>
-                      <td style={{ padding: '3px 4px' }}>{g.loc}</td>
-                      <td style={{ padding: '3px 4px' }}>{g.score}</td>
-                      <td style={{ padding: '3px 4px' }}>{fmt2(g.weight)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="small" style={{ color: 'var(--muted)' }}>
-              No notable wins logged yet.
-            </div>
-          )}
-        </div>
-
-        <div>
-          <div className="small" style={{ fontWeight: 600, marginBottom: 4 }}>
-            Loss profile
-          </div>
-          {lossProfile.length ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table
-                style={{
-                  width: '100%',
-                  borderCollapse: 'collapse',
-                  fontSize: 11,
-                }}
-              >
-                <thead>
-                  <tr
-                    className="small"
-                    style={{ textAlign: 'left', color: 'var(--muted)' }}
-                  >
-                    <th style={{ padding: '3px 4px' }}>Opponent</th>
-                    <th style={{ padding: '3px 4px' }}>Opp Rk</th>
-                    <th style={{ padding: '3px 4px' }}>Wk</th>
-                    <th style={{ padding: '3px 4px' }}>Loc</th>
-                    <th style={{ padding: '3px 4px' }}>Score</th>
-                    <th style={{ padding: '3px 4px' }}>Wt</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lossProfile.map((g, i) => (
-                    <tr
-                      key={`${g.opp}-${g.week}-${i}`}
-                      style={{ borderTop: '1px solid #1b2447' }}
-                    >
-                      <td style={{ padding: '3px 4px' }}>{g.opp}</td>
-                      <td style={{ padding: '3px 4px' }}>
-                        {g.oppRank && g.oppRank < 900 ? `#${g.oppRank}` : '—'}
-                      </td>
-                      <td style={{ padding: '3px 4px' }}>{g.week ?? '—'}</td>
-                      <td style={{ padding: '3px 4px' }}>{g.loc}</td>
-                      <td style={{ padding: '3px 4px' }}>{g.score}</td>
-                      <td style={{ padding: '3px 4px' }}>{fmt2(g.weight)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="small" style={{ color: 'var(--muted)' }}>
-              No losses on the résumé yet.
-            </div>
-          )}
-        </div>
+      {/* Signature wins, then loss profile below — full width each */}
+      <div>
+        <div className="small" style={{ fontWeight: 600, marginBottom: 2 }}>Signature wins</div>
+        {gameTable(topWins, 'No notable wins logged yet.')}
+      </div>
+      <div>
+        <div className="small" style={{ fontWeight: 600, marginBottom: 2 }}>Loss profile</div>
+        {gameTable(lossProfile, 'No losses on the résumé yet.')}
       </div>
     </div>
   )
@@ -823,8 +656,10 @@ function CommonOpponentsCard({ teamA, teamB }) {
 /* ------------------ Main view: top N cards ------------------ */
 
 export default function NarrativeCardsTop25() {
-  const { rankings, loading: busy, error: ctxErr, year } = useRankings()
+  const { rankings, loading: busy, error: ctxErr, year, rankMap, teamMap } = useRankings()
   const [err, setErr] = useState(null)
+  const weekly = useWeeklyRankings(year)
+  const [openIdx, setOpenIdx] = useState(null)   // index into topRows for the team dialog
   const [limit, setLimit] = useState(25)
 
   const rows = useMemo(() => {
@@ -951,9 +786,21 @@ export default function NarrativeCardsTop25() {
                 maxNarrative={maxNarrative}
                 metricRanks={metricRanks}
                 groupSize={topRows.length}
+                onOpen={() => setOpenIdx(topRows.indexOf(t))}
               />
             ))}
           </div>
+
+          <Drawer
+            open={openIdx != null}
+            team={openIdx != null ? topRows[openIdx] : null}
+            onClose={() => setOpenIdx(null)}
+            onPrev={() => setOpenIdx(i => (i <= 0 ? topRows.length - 1 : i - 1))}
+            onNext={() => setOpenIdx(i => (i >= topRows.length - 1 ? 0 : i + 1))}
+            rankMap={rankMap}
+            teamMap={teamMap}
+            weekly={weekly}
+          />
 
           <BoundaryPairsTable pairs={boundaryPairs} />
 
