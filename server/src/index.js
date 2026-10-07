@@ -1565,9 +1565,12 @@ async function computeWeeklyRankings(year) {
 
   const weekKey = (g) => g.week ?? g.game_week ?? g.gameWeek ?? 1;
   let maxWeek = 0;
+  const weekStarts = {}; // week -> earliest kickoff (ISO), used to find the current week by date
   for (const g of gamesRaw) {
     const w = weekKey(g);
     if (w > maxWeek) maxWeek = w;
+    const d = g.startDate ?? g.start_date;
+    if (d && (!weekStarts[w] || d < weekStarts[w])) weekStarts[w] = d;
   }
 
   const weeks = {};
@@ -1584,7 +1587,19 @@ async function computeWeeklyRankings(year) {
     }));
   }
 
-  return { year, maxWeek, weeks };
+  return { year, maxWeek, weeks, weekStarts };
+}
+
+// Current week by date: the latest week whose first game has kicked off.
+// Past seasons resolve to maxWeek; before the season starts it's week 1.
+function currentWeekByDate(data, now = new Date()) {
+  const starts = data.weekStarts || {};
+  if (!Object.keys(starts).length) return data.maxWeek;
+  let cur = 1;
+  for (let wk = 1; wk <= data.maxWeek; wk++) {
+    if (starts[wk] && new Date(starts[wk]) <= now) cur = wk;
+  }
+  return cur;
 }
 
 app.get('/api/rankings/weekly', async (req, res) => {
@@ -1594,7 +1609,8 @@ app.get('/api/rankings/weekly', async (req, res) => {
     if (!weeklyCache.has(year)) {
       weeklyCache.set(year, await computeWeeklyRankings(year));
     }
-    res.json(weeklyCache.get(year));
+    const data = weeklyCache.get(year);
+    res.json({ ...data, currentWeek: currentWeekByDate(data) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

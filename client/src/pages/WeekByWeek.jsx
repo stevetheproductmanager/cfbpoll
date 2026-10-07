@@ -16,7 +16,7 @@ const LINE_COLORS = [
   '#ff5722', '#607d8b', '#cddc39', '#795548', '#03a9f4',
 ]
 
-function BumpChart({ weekData, week, maxWeek, onWeekClick }) {
+function BumpChart({ weekData, week, maxWeek, currentWeek, onWeekClick }) {
   const containerRef = useRef(null)
   const [containerW, setContainerW] = useState(900)
 
@@ -32,7 +32,7 @@ function BumpChart({ weekData, week, maxWeek, onWeekClick }) {
   const teamWeekRanks = useMemo(() => {
     if (!weekData) return new Map()
     const map = new Map()
-    for (let wk = 1; wk <= maxWeek; wk++) {
+    for (let wk = 1; wk <= currentWeek; wk++) {
       const teams = weekData.weeks[wk] || []
       for (const t of teams) {
         if (t.rank > CHART_TEAMS) continue
@@ -41,7 +41,7 @@ function BumpChart({ weekData, week, maxWeek, onWeekClick }) {
       }
     }
     return map
-  }, [weekData, maxWeek])
+  }, [weekData, currentWeek])
 
   const trackedTeams = useMemo(() => {
     const currentWeek = weekData?.weeks[week] || []
@@ -79,6 +79,7 @@ function BumpChart({ weekData, week, maxWeek, onWeekClick }) {
           const rel = x - LABEL_W
           if (rel < 0 || rel > chartAreaW) return
           const wk = Math.max(1, Math.min(maxWeek, Math.round(rel / weekW + 0.5)))
+          if (wk > currentWeek) return
           onWeekClick(wk)
         }}
       >
@@ -96,6 +97,7 @@ function BumpChart({ weekData, week, maxWeek, onWeekClick }) {
               x={weekX(wk)} y={14}
               textAnchor="middle" fontSize={11}
               fill={wk === week ? 'var(--brand2)' : 'var(--muted)'}
+              opacity={wk > currentWeek ? 0.4 : 1}
               fontWeight={wk === week ? 700 : 400}
             >{wk}</text>
           </g>
@@ -217,7 +219,7 @@ export default function WeekByWeek() {
       .then(data => {
         if (cancelled) return
         setWeekData(data)
-        setWeek(data.maxWeek)
+        setWeek(Math.min(data.currentWeek ?? data.maxWeek, data.maxWeek))
       })
       .catch(err => console.error('Weekly rankings fetch failed:', err))
       .finally(() => { if (!cancelled) setFetching(false) })
@@ -230,6 +232,8 @@ export default function WeekByWeek() {
   if (!weekData) return <div className="card"><p className="small">No weekly data available.</p></div>
 
   const maxWeek = weekData.maxWeek
+  // Weeks after the current one (by date) haven't happened yet — not selectable, shown as '—'.
+  const currentWeek = Math.min(weekData.currentWeek ?? maxWeek, maxWeek)
   const currentRankings = weekData.weeks[week] || []
   const prevRankings = week > 1 ? (weekData.weeks[week - 1] || []) : []
 
@@ -249,12 +253,12 @@ export default function WeekByWeek() {
           <input
             type="range"
             min={1}
-            max={maxWeek}
+            max={currentWeek}
             value={week ?? maxWeek}
             onChange={e => setWeek(Number(e.target.value))}
             style={{ flex: 1 }}
           />
-          <span className="small">Wk {maxWeek}</span>
+          <span className="small">Wk {currentWeek}</span>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {['chart', 'table'].map(v => (
@@ -272,6 +276,7 @@ export default function WeekByWeek() {
           weekData={weekData}
           week={week}
           maxWeek={maxWeek}
+          currentWeek={currentWeek}
           onWeekClick={setWeek}
         />
       ) : topN.length === 0 ? (
@@ -288,10 +293,12 @@ export default function WeekByWeek() {
                 {weeks.map(wk => (
                   <th
                     key={wk}
-                    onClick={() => setWeek(wk)}
-                    title={`Show week ${wk}`}
+                    onClick={wk <= currentWeek ? () => setWeek(wk) : undefined}
+                    title={wk <= currentWeek ? `Show week ${wk}` : `Week ${wk} hasn't been played yet`}
                     style={{
-                      padding: '8px 4px', textAlign: 'center', cursor: 'pointer',
+                      padding: '8px 4px', textAlign: 'center',
+                      cursor: wk <= currentWeek ? 'pointer' : 'default',
+                      opacity: wk <= currentWeek ? 1 : 0.45,
                       color: wk === week ? 'var(--brand2)' : undefined,
                       background: wk === week ? 'var(--brand-glow)' : undefined,
                     }}
@@ -330,7 +337,7 @@ export default function WeekByWeek() {
                     </td>
                     <td style={{ padding: '8px 12px 8px 6px', fontWeight: 600, whiteSpace: 'nowrap' }}>{t.name}</td>
                     {weeks.map(wk => {
-                      const r = rankByWeek.get(wk)?.get(t.name)
+                      const r = wk <= currentWeek ? rankByWeek.get(wk)?.get(t.name) : null
                       return (
                         <td
                           key={wk}

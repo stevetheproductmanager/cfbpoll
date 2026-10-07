@@ -132,7 +132,8 @@ function GameTable({ team, rankMap, teamMap }) {
 
 function TeamTrend({ name, weekly }) {
   if (!weekly) return <div className="small">Loading weekly trend…</div>
-  const maxWeek = weekly.maxWeek || 0
+  // Stop at the current week (by date) — later weeks haven't been played yet.
+  const maxWeek = Math.min(weekly.currentWeek ?? weekly.maxWeek ?? 0, weekly.maxWeek || 0)
   const pts = []
   for (let wk = 1; wk <= maxWeek; wk++) {
     const t = (weekly.weeks?.[wk] || []).find(x => x.name === name)
