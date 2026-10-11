@@ -302,11 +302,30 @@ function rowPayload(t) {
     `Off Rk: #${t.offRank||'—'}, Def Rk: #${t.defRank||'—'}`
 }
 
+function moveCell(prevRankMap, t) {
+  if (!prevRankMap) return <span style={{ color: 'var(--muted)' }}>—</span>
+  const prev = prevRankMap.get(t.name)
+  if (prev == null) return <span style={{ color: '#3ea7ff', fontWeight: 700, fontSize: 11 }}>NEW</span>
+  const diff = prev - t.rank
+  if (diff > 0) return <span style={{ color: '#2ecc71', fontWeight: 700 }} title={`Was #${prev}`}>▲{diff}</span>
+  if (diff < 0) return <span style={{ color: '#e74c3c', fontWeight: 700 }} title={`Was #${prev}`}>▼{-diff}</span>
+  return <span style={{ color: 'var(--muted)' }}>—</span>
+}
+
 export default function Rankings(){
   const { theme } = useTheme()
   const { rankings: rows, loading, error, rankMap, teamMap, year } = useRankings()
   const weekly = useWeeklyRankings(year)
   const toast = useToast()
+
+  // Week-over-week movement: compare against the rankings after the week
+  // before the latest week with completed games.
+  const prevRankMap = useMemo(() => {
+    let lastWeek = 0
+    for (const t of rows || []) for (const g of t.games || []) if ((g.week || 0) > lastWeek) lastWeek = g.week
+    const prev = weekly?.weeks?.[lastWeek - 1]
+    return prev?.length ? new Map(prev.map(t => [t.name, t.rank])) : null
+  }, [rows, weekly])
 
   const [open, setOpen] = useState(false)
   const [idx, setIdx] = useState(0)
@@ -371,6 +390,7 @@ export default function Rankings(){
             <thead>
               <tr style={{ textAlign:'left' }}>
                 <th style={{ padding:'8px' }}>#</th>
+                <th style={{ padding:'8px', textAlign:'center' }} title="Change from last week's ranking">Move</th>
                 <th style={{ padding:'8px' }}>Team</th>
                 <th style={{ padding:'8px' }}>Conf</th>
                 <th style={{ padding:'8px' }}>W-L</th>
@@ -378,7 +398,7 @@ export default function Rankings(){
                 <th style={{ padding:'8px' }}>SOS Rank</th>
                 <th style={{ padding:'8px' }}>SOS</th>
                 <th style={{ padding:'8px' }}>Quality</th>
-                <th style={{ padding:'8px' }}>Recency</th>
+                <th style={{ padding:'8px' }}>Momentum</th>
                 <th style={{ padding:'8px' }}>Top 10 W</th>
                 <th style={{ padding:'8px' }}>Top 25 W</th>
                 <th style={{ padding:'8px' }}>Top 50 W</th>
@@ -400,6 +420,7 @@ export default function Rankings(){
                     onClick={() => openAt(i)}
                   >
                     <td style={{ padding:'8px' }}>{t.rank}</td>
+                    <td style={{ padding:'8px', textAlign:'center', whiteSpace:'nowrap' }}>{moveCell(prevRankMap, t)}</td>
                     <td style={{ padding:'8px' }}>
                       <div style={{ display:'flex', alignItems:'center', gap:8, whiteSpace:'nowrap' }}>
                         <div style={{ width: 24, height: 24, flex: '0 0 24px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -420,7 +441,7 @@ export default function Rankings(){
                     <td style={{ padding:'8px' }}>{t.sosRank ?? '—'}</td>
                     <td style={{ padding:'8px' }}>{fmt(t.sos)}</td>
                     <td style={{ padding:'8px' }}>{fmt(t.quality)}</td>
-                    <td style={{ padding:'8px' }}>{fmt(t.rec || 0)}</td>
+                    <td style={{ padding:'8px' }}>{fmt(t.momentum || 0)}</td>
                     <td style={{ padding:'8px' }}>{t.top10Wins || 0}</td>
                     <td style={{ padding:'8px' }}>{t.top25Wins || 0}</td>
                     <td style={{ padding:'8px' }}>{t.top50Wins || 0}</td>
