@@ -10,10 +10,10 @@ const customPollSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 60 },
   season: { type: Number, required: true },
   weights: {
-    efficiency: { type: Number, default: 0.46 },
-    results: { type: Number, default: 0.25 },
+    efficiency: { type: Number, default: 0.42 },
+    results: { type: Number, default: 0.30 },
     sos: { type: Number, default: 0.10 },
-    quality: { type: Number, default: 0.15 },
+    quality: { type: Number, default: 0.14 },
     momentum: { type: Number, default: 0.04 },
     conference: { type: Number, default: 0 },
   },

@@ -478,7 +478,7 @@ function zScorer(teams, get) {
 
 /** Default component weights for the built-in computer poll (must sum to 1).
  * Components are z-scored before weighting, so these are the real mix. */
-export const DEFAULT_WEIGHTS = { efficiency: 0.46, results: 0.25, sos: 0.10, quality: 0.15, momentum: 0.04 };
+export const DEFAULT_WEIGHTS = { efficiency: 0.42, results: 0.30, sos: 0.10, quality: 0.14, momentum: 0.04 };
 
 /** Default "advanced" tuning knobs — 0-100 sliders. Every default reproduces
  * the official site algorithm's fixed constants exactly; a custom poll can

@@ -264,7 +264,7 @@ export function Drawer({ open, team, onClose, onPrev, onNext, rankMap, teamMap, 
               <h3 style={{ margin: '8px 0 6px' }}>How this score is built</h3>
               <Bars items={bars} />
               <div className="small" style={{ marginTop: 6 }}>
-                Weights: EFF 46%, RES 25%, SOS 10%, QLT 15%, MOM 4% (components z-scored; efficiency weights recent games more). Undefeated bonus (SOS-scaled); a head-to-head winner moves above a closely ranked team it beat.
+                Weights: EFF 42%, RES 30%, SOS 10%, QLT 14%, MOM 4% (components z-scored; efficiency weights recent games more). Undefeated bonus (SOS-scaled); a head-to-head winner moves above a closely ranked team it beat.
               </div>
             </div>
 
