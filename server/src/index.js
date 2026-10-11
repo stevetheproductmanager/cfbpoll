@@ -1586,11 +1586,13 @@ async function computeWeeklyRankings(year) {
   }
 
   const weeks = {};
+  let prevRanks = null; // last week's final ranks, for the no-rise-after-a-loss rule
   for (let wk = 1; wk <= maxWeek; wk++) {
     const filtered = gamesRaw.filter(g => weekKey(g) <= wk);
     if (!filtered.length) { weeks[wk] = []; continue; }
 
-    const ranked = rankTeams({ teamsRaw, gamesRaw: filtered, spRaw });
+    const ranked = rankTeams({ teamsRaw, gamesRaw: filtered, spRaw, prevRanks });
+    prevRanks = new Map(ranked.map(t => [t.name, t.rank]));
 
     // Every FBS team, so a team's week-by-week trend works at any rank.
     weeks[wk] = ranked.map(t => ({

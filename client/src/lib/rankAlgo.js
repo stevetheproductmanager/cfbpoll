@@ -397,6 +397,41 @@ function applyHeadToHeadOrder(sorted, teamsMap) {
   }
 }
 
+/** No rise after a loss: a team that lost in the latest week can't end up
+ * ranked higher than it was the week before. It's moved back down to its
+ * previous rank (everyone it passed shifts up one). Repeats until stable,
+ * since moving one team can lift another loser past its old spot. */
+function applyNoRiseAfterLoss(sorted, prevRanks, lastWeek) {
+  const lostLast = (t) => t.games.some(g => (g.week || 1) === lastWeek && g.for < g.against);
+  for (let guard = 0; guard < 200; guard++) {
+    let moved = false;
+    for (let i = 0; i < sorted.length; i++) {
+      const t = sorted[i];
+      const pr = prevRanks.get(t.name);
+      if (pr == null || i + 1 >= pr || !lostLast(t)) continue;
+      const target = Math.min(pr - 1, sorted.length - 1);
+      sorted.splice(i, 1);
+      sorted.splice(target, 0, t);
+      t.score = Math.min(t.score, sorted[target - 1].score) - 1e-6; // keep scores in rank order
+      moved = true;
+      break;
+    }
+    if (!moved) break;
+  }
+}
+
+/** Each week's final ranks in order up to (not including) `lastWeek`, with
+ * the no-rise rule applied week by week — i.e. last week as it was shown. */
+function previousWeekRanks(args, lastWeek) {
+  const weeks = [...new Set(parseGames(args.gamesRaw).map(g => g.week || 1))].filter(w => w < lastWeek).sort((a, b) => a - b);
+  let prev = null;
+  for (const wk of weeks) {
+    const ranked = rankTeams({ ...args, gamesRaw: args.gamesRaw.filter(g => gameWeek(g) <= wk), prevRanks: prev });
+    prev = new Map(ranked.map(t => [t.name, t.rank]));
+  }
+  return prev;
+}
+
 /** SP+ prior (optional, fades quickly) as a clamped z-score. */
 function indexSP(spRaw = [], teamIndex = null) {
   const map = new Map();
@@ -452,7 +487,11 @@ export const DEFAULT_WEIGHTS = { efficiency: 0.46, results: 0.25, sos: 0.10, qua
 export const DEFAULT_ADVANCED = { movWeight: 50, sosBlend: 72, recencyDecay: 50, locationBonus: 50, badLossPenalty: 50 };
 
 /** ---------------- Main ranking (ALL teams internally; filter to FBS at the end) ---------------- **/
-export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = null, advanced = null }) {
+/** `prevRanks` (optional): Map of team → last week's final rank, used by the
+ * no-rise-after-a-loss rule. Omit it and it's computed from `gamesRaw`; pass
+ * null to skip the rule; callers walking weeks in order can pass the previous
+ * week's result to avoid recomputing the chain. */
+export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = null, advanced = null, prevRanks }) {
   const adv = advanced || {};
   const teamsMap = new Map();
   const { meta, byId, byName } = buildTeamsIndex(teamsRaw);
@@ -608,6 +647,12 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
   applyHeadToHeadNudge(rankedFBS, teamsMap);
   rankedFBS.sort((a, b) => b.score - a.score);
   applyHeadToHeadOrder(rankedFBS, teamsMap);
+
+  const lastWeek = played.reduce((m, t) => Math.max(m, ...t.games.map(g => g.week || 1)), 0);
+  const prev = prevRanks !== undefined ? prevRanks
+    : previousWeekRanks({ teamsRaw, gamesRaw, spRaw, weights, advanced }, lastWeek);
+  if (prev) applyNoRiseAfterLoss(rankedFBS, prev, lastWeek);
+
   rankedFBS.forEach((t, i)=> t.rank = i+1);
   {
     const sosSortedFBS = [...rankedFBS].sort((a, b) => b.sos - a.sos); // higher = tougher
