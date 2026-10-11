@@ -34,11 +34,11 @@ export default function Methodology() {
       <Section title={<><Settings size={15} /> The Official Computer Model</>}>
         <p>Poll Position's built-in computer ranking blends five components, computed fresh from this season's game data:</p>
         <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
-          <li><strong>Efficiency (42%)</strong> — opponent-adjusted offense and defense ratings (home field removed, blowout margins softened, recent games weighted more), blended with raw scoring.</li>
-          <li><strong>Results (25%)</strong> — win/loss record with margin of victory (capped to limit blowout-chasing), venue adjustments, and opponent strength — beating good teams counts more, losing to bad ones hurts more. Recent games weigh more.</li>
+          <li><strong>Efficiency (46%)</strong> — opponent-adjusted offense and defense ratings (home field removed, blowout margins softened, recent games weighted more), blended with raw scoring.</li>
+          <li><strong>Results (25%)</strong> — win/loss record with margin of victory (capped to limit blowout-chasing), venue adjustments, and opponent strength — beating good teams counts more, losing to bad ones hurts more. Every game counts the same.</li>
           <li><strong>Strength of Schedule (10%)</strong> — the average opponent-adjusted rating of the teams you've played, blended with their win percentage.</li>
           <li><strong>Résumé Quality (15%)</strong> — credit for beating highly ranked FBS teams and penalties for bad losses, sliding smoothly with the opponent's rank.</li>
-          <li><strong>Momentum (8%)</strong> — whether a team's last few games beat or trailed its own opponent-adjusted expectation.</li>
+          <li><strong>Momentum (4%)</strong> — whether a team's recent games, smoothed over the last few weeks, beat or trailed its own opponent-adjusted expectation.</li>
         </ul>
         <p style={{ marginTop: 8 }}>Each component is put on the same scale before weighting, so the percentages are the real mix. A small, schedule-scaled undefeated bonus and an early-season prior (SP+ ratings, which fades out as more games are played) round out the model.</p>
       </Section>

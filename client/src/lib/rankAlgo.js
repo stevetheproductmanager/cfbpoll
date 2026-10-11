@@ -208,11 +208,11 @@ function ratingPercentiles(teamsMap) {
 }
 
 /** Results: win/loss with capped MOV, venue weight, FCS adjustments, scaled
- * by opponent strength (rating percentile, not raw win%) and weighted toward
- * recent games.
+ * by opponent strength (rating percentile, not raw win%). Season-long — every
+ * game counts the same; recency lives in perf and momentum.
  * `adv` (advanced tuning): movWeight 0-100 (default 50 → 0.28 coefficient),
  * locationBonus 0-100 (default 50 → 1x scale), badLossPenalty 0-100 (default 50 → 1x scale). */
-function computeResults(team, teamsMapRef, adv, recW, oppPct){
+function computeResults(team, teamsMapRef, adv, oppPct){
   const movCoef = adv.movWeight != null ? 0.56 * (adv.movWeight / 100) : 0.28;
   const locScale = adv.locationBonus != null ? adv.locationBonus / 50 : 1;
   const lossScale = adv.badLossPenalty != null ? adv.badLossPenalty / 50 : 1;
@@ -230,9 +230,8 @@ function computeResults(team, teamsMapRef, adv, recW, oppPct){
     const s = oppPct.get(g.opp) ?? 0.5;
     const oppMul = win ? (0.80 + 0.40 * s) : (0.80 + 0.40 * (1 - s));
 
-    const rw = recW(g);
-    sum += gameScore * lw * oppMul * rw;
-    wSum += rw;
+    sum += gameScore * lw * oppMul;
+    wSum += 1;
 
     if (win) w++; else l++;
   }
@@ -321,8 +320,9 @@ function fbsRankMap(fbsTeams, key) {
   return new Map(sorted.map((t, i) => [t.name, i + 1]));
 }
 
-/** Momentum: last few games' opponent-adjusted performance vs. the team's
- * own season residual. `adv.recencyDecay` 0-100 (default 50 → 1x) scales it. */
+/** Momentum: recency-weighted (2-week half-life) opponent-adjusted
+ * performance vs. the team's season average, shrunk for small samples so one
+ * game can't swing it hard. `adv.recencyDecay` 0-100 (default 50 → 1x) scales it. */
 function computeMomentum(teamsMap, adv = {}) {
   const coef = adv.recencyDecay != null ? adv.recencyDecay / 50 : 1;
   for (const t of teamsMap.values()) {
@@ -333,10 +333,16 @@ function computeMomentum(teamsMap, adv = {}) {
       const { pf, pa } = adjustedPoints(g);
       return (pf - pa) - (t.rating - (teamsMap.get(g.opp)?.rating ?? 0));
     });
-    const n = Math.min(3, Math.floor(gp / 2));
-    const recent = resid.slice(-n).reduce((a, b) => a + b, 0) / n;
+    const lastWeek = sorted[gp - 1].week || 1;
+    let rSum = 0, wSum = 0;
+    sorted.forEach((g, i) => {
+      const w = Math.pow(0.5, (lastWeek - (g.week || 1)) / 2);
+      rSum += w * resid[i]; wSum += w;
+    });
+    const recent = rSum / wSum;
     const season = resid.reduce((a, b) => a + b, 0) / gp;
-    t.momentum = clamp((recent - season) / 28, -1, 1) * coef;
+    const shrink = gp / (gp + 4);
+    t.momentum = clamp(((recent - season) / 28) * shrink, -1, 1) * coef;
   }
 }
 
@@ -364,6 +370,31 @@ function applyHeadToHeadNudge(sorted, teamsMap){
     }
   }
   for (const t of sorted) t.score += bump.get(t.name) || 0;
+}
+
+/** H2H ordering: if a lower team beat a higher one (and didn't also lose to
+ * it) and the two are within H2H_SWAP_Z z-units, the winner moves just above
+ * the loser. A few passes settle chains; true cycles are left as scored. */
+const H2H_SWAP_Z = 0.4;
+function applyHeadToHeadOrder(sorted, teamsMap) {
+  const beat = (a, b) => (teamsMap.get(a.name)?.games || []).some(g => g.opp === b.name && g.for > g.against);
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    for (let i = 0; i < sorted.length && !changed; i++) {
+      const higher = sorted[i];
+      for (let j = i + 1; j < Math.min(sorted.length, i + 12); j++) {
+        const lower = sorted[j];
+        if (higher.score - lower.score >= H2H_SWAP_Z * SCORE_SCALE) break;
+        if (beat(lower, higher) && !beat(higher, lower)) {
+          lower.score = higher.score + 1e-4;
+          sorted.sort((a, b) => b.score - a.score);
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) break;
+  }
 }
 
 /** SP+ prior (optional, fades quickly) as a clamped z-score. */
@@ -413,7 +444,7 @@ function zScorer(teams, get) {
 
 /** Default component weights for the built-in computer poll (must sum to 1).
  * Components are z-scored before weighting, so these are the real mix. */
-export const DEFAULT_WEIGHTS = { efficiency: 0.42, results: 0.25, sos: 0.10, quality: 0.15, momentum: 0.08 };
+export const DEFAULT_WEIGHTS = { efficiency: 0.46, results: 0.25, sos: 0.10, quality: 0.15, momentum: 0.04 };
 
 /** Default "advanced" tuning knobs — 0-100 sliders. Every default reproduces
  * the official site algorithm's fixed constants exactly; a custom poll can
@@ -464,7 +495,7 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
   computePerformanceIndex(teamsMap, recW);
   const oppPct = ratingPercentiles(teamsMap);
 
-  for (const t of allTeams) computeResults(t, teamsMap, adv, recW, oppPct);
+  for (const t of allTeams) computeResults(t, teamsMap, adv, oppPct);
   computeSOS(teamsMap, adv);
   computeMomentum(teamsMap, adv);
 
@@ -576,6 +607,7 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
   const rankedFBS = [...fbsTeams].sort((a, b) => b.score - a.score);
   applyHeadToHeadNudge(rankedFBS, teamsMap);
   rankedFBS.sort((a, b) => b.score - a.score);
+  applyHeadToHeadOrder(rankedFBS, teamsMap);
   rankedFBS.forEach((t, i)=> t.rank = i+1);
   {
     const sosSortedFBS = [...rankedFBS].sort((a, b) => b.sos - a.sos); // higher = tougher
