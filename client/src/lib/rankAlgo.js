@@ -294,7 +294,7 @@ const LOSS_DEBIT = [[10, 0], [25, -0.04], [50, -0.11], [80, -0.20], [110, -0.26]
 const NON_FBS_RANK = 200;
 
 /** Quality résumé: per-game credit/debit by opponent FBS rank, with margin
- * scaling and good-loss credit. Non-FBS opponents never count as quality wins.
+ * scaling; a loss never adds credit. Non-FBS opponents never count as quality wins.
  * `adv.badLossPenalty` 0-100 (default 50 → 1x scale) dials the debit for bad losses. */
 function computeQuality(teamsMap, rankOf, adv = {}){
   const lossScale = adv.badLossPenalty != null ? adv.badLossPenalty / 50 : 1;
@@ -308,7 +308,6 @@ function computeQuality(teamsMap, rankOf, adv = {}){
       } else {
         const closeMul = margin <= 7 ? 0.65 : margin <= 14 ? 0.85 : 1.0;
         q += interp(LOSS_DEBIT, r) * closeMul * lossScale;
-        if (margin <= 7) q += 0.06 * clamp((15 - r) / 14, 0, 1); // close loss to an elite team
       }
     }
     t.quality = safeDiv(q, Math.max(1, t.games.length));
@@ -547,9 +546,20 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
     sosSortedAll.forEach((t, i) => { t.sosRankAll = i + 1; });
   }
 
-  // Raw (unadjusted) PF/PA percentiles — FBS only so FCS doesn't skew them
-  const pfPct = toPercentiles(fbsTeams.map(t => t.pf_pg || 0), true);
-  const paPct = toPercentiles(fbsTeams.map(t => t.pa_pg || 0), false);
+  // Raw (unadjusted) PF/PA percentiles across FBS teams. Games against
+  // non-FBS opponents count at NON_FBS_GAME_WEIGHT so a blowout of an FCS team
+  // can't dominate the per-game averages.
+  const NON_FBS_GAME_WEIGHT = 0.25;
+  const weightedPerGame = (t, key) => {
+    let sum = 0, w = 0;
+    for (const g of t.games) {
+      const gw = (teamsMap.get(g.opp)?.classification || '').toLowerCase() === 'fbs' ? 1 : NON_FBS_GAME_WEIGHT;
+      sum += gw * g[key]; w += gw;
+    }
+    return w ? sum / w : 0;
+  };
+  const pfPct = toPercentiles(fbsTeams.map(t => weightedPerGame(t, 'for')), true);
+  const paPct = toPercentiles(fbsTeams.map(t => weightedPerGame(t, 'against')), false);
   fbsTeams.forEach((t, i) => { t.offPct = pfPct[i]; t.defPct = paPct[i]; });
   for (const t of allTeams) {
     if (t.offPct == null) t.offPct = 0.5;
@@ -558,7 +568,7 @@ export function rankTeams({ teamsRaw = [], gamesRaw = [], spRaw = [], weights = 
 
   // Efficiency: mostly the opponent-adjusted rating, a little raw PF/PA;
   // the adjusted share grows as the season gives it more games.
-  const perfBlend = 0.55 + 0.25 * seasonProgress;
+  const perfBlend = 0.80 + 0.10 * seasonProgress;
   for (const t of allTeams) {
     const rawEff = clamp(0.55 * t.offPct + 0.45 * t.defPct, 0, 1);
     t.efficiency = (1 - perfBlend) * rawEff + perfBlend * (t.perf * 0.5 + 0.5);
